@@ -33,6 +33,8 @@ def get_state_dict(modules_dict: Dict[str, Any]) -> Dict[str, torch.tensor]:
 # Assumption is keys of modules_dict match one-to-one with state_dict, which should be the case due to how I've
 # defined get_state_dict. Also assumes that `modules_dict` contains the weights that are actually used during
 # forward passes.
+
+# It seems like `model.modules` may be what's used to load the weights. Refer to line 535 of model.py
 def load_state_dict_into_model(model: exllamav2.model.ExLlamaV2, state_dict: Dict[str, torch.tensor]) -> None:
     for key, value in state_dict:
         if is_embedding(key):

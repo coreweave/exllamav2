@@ -113,7 +113,12 @@ if not model.loaded and not args.stream_layers:
     print(" -- Loading model...")
     cache = ExLlamaV2Cache(model, lazy = True)
     t = time.time()
-    model.load_autosplit(cache)
+
+    if args.tensorizer:
+        load_tensorized(model)
+    else:
+        model.load_autosplit(cache)
+
     t = time.time() - t
     print(f" -- Loaded model in {t:.4f} seconds")
 
@@ -565,7 +570,7 @@ if args.prompt_speed:
 
 # Try to serialize tensors
 
-# if args.tensorizer:
+# if args.serialize:
 from tensorizer import TensorSerializer
 from get_state_dict import get_state_dict
 
