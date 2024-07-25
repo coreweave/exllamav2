@@ -563,6 +563,20 @@ if args.prompt_speed:
             current_len = min(current_len + step, model.config.max_seq_len)
             if current_len == current_len_: break
 
+# Try to serialize tensors
+
+# if args.tensorizer:
+from tensorizer import TensorSerializer
+from get_state_dict import get_state_dict
+
+save_loc = "downloaded_models/tensorized/serialized_llama.tensors"
+
+model.state_dict = get_state_dict(model.modules_dict)
+serializer = TensorSerializer(save_loc)
+
+serializer.write_state_dict(model.state_dict)
+serializer.close()
+
 
 # Test token speed
 

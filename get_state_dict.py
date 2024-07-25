@@ -20,7 +20,7 @@ get_rms_norm = lambda x: x.weight.data
 # Llama architectural sameness
 def get_state_dict(modules_dict: Dict[str, Any]) -> Dict[str, torch.tensor]:
     state_dict = {}
-    for key, value in modules_dict:
+    for key, value in modules_dict.items():
         if isinstance(value, exllamav2.embedding.ExLlamaV2Embedding):
             state_dict[key] = get_embedding(value)
         if isinstance(value, exllamav2.linear.ExLlamaV2Linear):
