@@ -108,9 +108,9 @@ cache = None
 
 if args.tensorizer:
     from get_state_dict import load_state_dict_into_model
-    import json
-    with open("downloaded_models/tensorized/serialized_llama_state_dict.json") as f:
-        state_dict = json.load(f)
+    from tensorizer import TensorDeserializer
+    with open("downloaded_models/tensorized/serialized_llama_state_dict.tensors", "rb") as f:
+        state_dict = TensorDeserializer(f)
         load_state_dict_into_model(model, state_dict)
 
 if not model.loaded and not args.stream_layers:
@@ -579,7 +579,7 @@ if args.prompt_speed:
 from tensorizer import TensorSerializer
 from get_state_dict import get_state_dict
 
-save_loc = "downloaded_models/tensorized/serialized_llama_state_dict.json"
+save_loc = "downloaded_models/tensorized/serialized_llama_state_dict.tensors"
 
 model.state_dict = get_state_dict(model.modules_dict)
 serializer = TensorSerializer(save_loc)
