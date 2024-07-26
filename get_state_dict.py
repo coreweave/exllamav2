@@ -39,10 +39,20 @@ def get_state_dict(modules_dict: Dict[str, Any]) -> Dict[str, torch.tensor]:
 # the weights in `model.modules` with those from `model.modules_dict` using the relationship in line 300
 # if I had to.
 def load_state_dict_into_model(model: exllamav2.model.ExLlamaV2, state_dict: Dict[str, torch.tensor]) -> None:
-    for key, value in state_dict:
-        if is_embedding(key):
-            model.modules_dict[key].embedding.weight.data = state_dict[key]
-        if is_norm(key):
-            model.modules_dict[key].weight.data = state_dict[key]
-        if is_linear(key):
-            model.modules_dict[key].linear.data = state_dict[key]
+    for key, _ in state_dict:
+        for mod in model.modules:
+            key = mod.key
+            if is_embedding(key):
+                model.key.embedding.weight.data = state_dict[key]
+            elif is_norm(key):
+                model.key.weight.data = state_dict[key]
+            elif is_linear(key):
+                model.key.linear.data = state_dict[key]
+            for i in range(mod.submodules):
+                key = mod.submodules[i]
+                if is_embedding(key):
+                    model.submodules[i].embedding.weight.data = state_dict[key]
+                elif is_norm(key):
+                    model.submodules[i].weight.data = state_dict[key]
+                elif is_linear(key):
+                    model.submodules[i].linear.data = state_dict[key]
