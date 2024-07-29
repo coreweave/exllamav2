@@ -1,5 +1,6 @@
 from typing import Dict, Any
 import torch
+from torch import nn
 
 import exllamav2.linear
 import exllamav2.embedding
@@ -39,20 +40,29 @@ def get_state_dict(modules_dict: Dict[str, Any]) -> Dict[str, torch.tensor]:
 # the weights in `model.modules` with those from `model.modules_dict` using the relationship in line 300
 # if I had to.
 def load_state_dict_into_model(model: exllamav2.model.ExLlamaV2, state_dict: Dict[str, torch.tensor]) -> None:
-    for key, _ in state_dict:
+    for key, _ in state_dict.items():
         for mod in model.modules:
             key = mod.key
             if is_embedding(key):
-                model.key.embedding.weight.data = state_dict[key]
+                mod.embedding = nn.Embedding(model.config.vocab_size, model.config.hidden_size, model.config.pad_token_id, device = "meta")
+                mod.embedding.weight = nn.Parameter(state_dict[key])
             elif is_norm(key):
-                model.key.weight.data = state_dict[key]
+                mod.weight = nn.Parameter(state_dict[key])
             elif is_linear(key):
-                model.key.linear.data = state_dict[key]
-            for i in range(mod.submodules):
-                key = mod.submodules[i]
+                mod.linear = nn.Linear(mod.in_features, mod.out_features,
+                                            mod.has_bias, device = "cuda",
+                                            dtype=torch.float16)
+                mod.linear.weight = nn.Parameter(state_dict[key])
+
+            for i in range(len(mod.submodules)):
+                key = mod.submodules[i].key
                 if is_embedding(key):
-                    model.submodules[i].embedding.weight.data = state_dict[key]
+                    mod.submodules[i].embedding.weight.data = state_dict[key]
                 elif is_norm(key):
-                    model.submodules[i].weight.data = state_dict[key]
+                    mod.submodules[i].weight = nn.Parameter(state_dict[key])
                 elif is_linear(key):
-                    model.submodules[i].linear.data = state_dict[key]
+                    mod.submodules[i].linear = nn.Linear(mod.submodules[i].in_features, mod.submodules[i].out_features,
+                                            mod.submodules[i].has_bias, device="cuda",
+                                            dtype=torch.float16)
+                    mod.submodules[i].linear.weight = nn.Parameter(state_dict[key])
+

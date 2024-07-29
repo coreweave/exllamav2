@@ -317,56 +317,63 @@ class ExLlamaV2Config:
         st_pattern = os.path.join(self.model_dir, "*.safetensors")
         self.tensor_files = glob.glob(st_pattern)
 
-        if len(self.tensor_files) == 0:
-            raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
+        try:
+            if len(self.tensor_files) == 0:
+                raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
 
-        for st_file in self.tensor_files:
-            f = STFile.open(st_file, fast = self.fasttensors, keymap = self.arch.keymap)
-            for key in f.get_dict():
-                self.tensor_file_map[key] = st_file
+            for st_file in self.tensor_files:
+                f = STFile.open(st_file, fast = self.fasttensors, keymap = self.arch.keymap)
+                for key in f.get_dict():
+                    self.tensor_file_map[key] = st_file
 
-        # For loading checkpoints with fused MLP layers
 
-        if "model.layers.0.mlp.down_proj.weight" not in self.tensor_file_map and \
-            "model.layers.0.mlp.swiglu.w12.weight" in self.tensor_file_map:
-            self.checkpoint_fused_mlp = True
-            self.arch.make_fused_mlp()
-        else:
-            self.checkpoint_fused_mlp = False
+            # For loading checkpoints with fused MLP layers
+
+            if "model.layers.0.mlp.down_proj.weight" not in self.tensor_file_map and \
+                "model.layers.0.mlp.swiglu.w12.weight" in self.tensor_file_map:
+                self.checkpoint_fused_mlp = True
+                self.arch.make_fused_mlp()
+            else:
+                self.checkpoint_fused_mlp = False
+
+        except:
+            pass
 
         # Make sure we found all the layers we need
+        try:
+            expect_keys = self.arch.expect_keys.copy()
 
-        expect_keys = self.arch.expect_keys.copy()
+            if not self.num_experts or self.num_experts == 1:
+                per_layer_keys = self.arch.layer_keys
+            else:
+                per_layer_keys = set()
+                for expert_idx in range(self.num_experts):
+                    for k in self.arch.layer_keys:
+                        skt = [sk.replace(".*.", f".{expert_idx}.") for sk in k]
+                        per_layer_keys.add(tuple(skt))
+                per_layer_keys = list(per_layer_keys)
 
-        if not self.num_experts or self.num_experts == 1:
-            per_layer_keys = self.arch.layer_keys
-        else:
-            per_layer_keys = set()
-            for expert_idx in range(self.num_experts):
-                for k in self.arch.layer_keys:
-                    skt = [sk.replace(".*.", f".{expert_idx}.") for sk in k]
-                    per_layer_keys.add(tuple(skt))
-            per_layer_keys = list(per_layer_keys)
+            for layer_idx in range(self.num_hidden_layers):
+                for ks in per_layer_keys:
+                    prefixes = [f"model.layers.{layer_idx}.{k}" for k in ks]
+                    expect_keys.append(prefixes)
 
-        for layer_idx in range(self.num_hidden_layers):
-            for ks in per_layer_keys:
-                prefixes = [f"model.layers.{layer_idx}.{k}" for k in ks]
-                expect_keys.append(prefixes)
+            all_keys = set(self.tensor_file_map.keys())
+            suffixes = [".q_weight", ".qweight", ".weight", ""]
 
-        all_keys = set(self.tensor_file_map.keys())
-        suffixes = [".q_weight", ".qweight", ".weight", ""]
-
-        for prefixes in expect_keys:
-            match = False
-            for prefix in prefixes:
-                for suffix in suffixes:
-                    if (prefix + suffix) in all_keys:
-                        match = True
-                        break
+            for prefixes in expect_keys:
+                match = False
+                for prefix in prefixes:
+                    for suffix in suffixes:
+                        if (prefix + suffix) in all_keys:
+                            match = True
+                            break
+                        if match: break
                     if match: break
-                if match: break
-            if not match:
-                raise ValueError(f" ## Could not find {prefix}.* in model")
+                if not match:
+                    raise ValueError(f" ## Could not find {prefix}.* in model")
+        except:
+            pass
 
         x = 0
 
