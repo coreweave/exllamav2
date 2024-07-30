@@ -40,7 +40,7 @@ def cleanup_stfiles():
     ext_c.safetensors_free_pinned_buffer()
 
 
-class STFile:
+class TensorFile:
 
     filename: str
     header: dict
@@ -51,11 +51,14 @@ class STFile:
     fast: bool
     st_context = None
     tensor_remap: dict | None
+    use_tensorizer: bool = False
+    tensorizer_state_dict: dict | None
 
     def __init__(self,
                  filename: str,
                  fast: bool = True,
-                 keymap: list[tuple[str, str]] = None):
+                 keymap: list[tuple[str, str]] = None,
+                 use_tensorizer: bool = False):
 
         global global_stfiles
 
@@ -65,8 +68,18 @@ class STFile:
         self.filename = filename
         self.st_context = None
         self.tensor_remap = None
+        self.use_tensorizer = use_tensorizer
 
         self.read_dict()
+
+        ## TODO: For this..
+        if self.use_tensorizer:
+            from tensorizer import TensorDeserializer
+            with open(self.filename) as f:
+                self.tensorizer_state_dict = TensorDeserializer(f)
+
+            ## deserialize state dict by self.name
+            ## save state dict to self.tensorizer_state_dict
 
         if keymap:
             self.tensor_remap = {}
@@ -103,7 +116,7 @@ class STFile:
     @staticmethod
     def open(filename,
              fast = True,
-             keymap: list[tuple[str, str]] = None) -> STFile:
+             keymap: list[tuple[str, str]] = None) -> TensorFile:
         """
         Open safetensors file, scan header and retain handle.
 
@@ -121,9 +134,14 @@ class STFile:
         """
 
         global global_stfiles
+
+        # TODO: Need to figure out where this will go wrong in the callstack
+        use_tensorizer = False
         for f in global_stfiles:
             if f.filename == filename: return f
-        return STFile(filename, fast, keymap)
+        if filename.endswith(".tensors"):
+            use_tensorizer = True
+        return TensorFile(filename, fast, keymap, use_tensorizer=use_tensorizer)
 
 
     def close(self):
@@ -189,13 +207,19 @@ class STFile:
                    out_dtype = None) -> torch.Tensor:
         global global_tensorcache
 
+
         if self.tensor_remap and (not_fast or not self.fast):
             key = self.tensor_remap[key]
+
 
         if cached:
             cachekey = self.filename + "::" + key + "::" + device
             for (k, v) in global_tensorcache:
                 if k == cachekey: return v
+
+        ## TODO: This is where I'll retrieve the state_dict I deserialized
+        if self.use_tensorizer:
+            return self.tensorizer_state_dict[key]
 
         if not_fast or (not self.fast and not self.fast_fb):
 

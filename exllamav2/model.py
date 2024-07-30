@@ -234,6 +234,7 @@ class ExLlamaV2:
     config: ExLlamaV2Config
     modules: list[ExLlamaV2Module]
     modules_dict: dict[str: ExLlamaV2Module]
+    state_dict: dict[str: torch.nn.Parameter]
     device_tensors: list[ExLlamaV2DeviceTensors]
     cache_map: dict[int: str]
     last_kv_layer_idx: int

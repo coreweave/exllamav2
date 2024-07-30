@@ -2,7 +2,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 from exllamav2.config import ExLlamaV2Config
-from exllamav2.fasttensors import STFile
+from exllamav2.fasttensors import TensorFile
 from exllamav2.compat import safe_move_tensor
 
 from typing import TYPE_CHECKING
@@ -14,6 +14,19 @@ def _torch_device(idx: int) -> str:
     if idx == -1: return "cpu"
     return f"cuda:{idx}"
 
+def tensorizer_wrapper(func):
+    def decorator(*args):
+        params = func(*args)
+        if args[0].model.config.tensorizer:
+            if len(params) > 1:
+                args[0].state_dict[args[0].key + ".weight"] = params[0]
+                args[0].model.state_dict[args[0].key + ".bias"] = params[1]
+            else:
+                args[0].model.state_dict[args[0].key + ".weight"] = params
+            return params
+        else:
+            return params
+    return decorator
 
 class ExLlamaV2Module:
 
@@ -73,13 +86,15 @@ class ExLlamaV2Module:
             if ck in self.model.config.tensor_file_map:
                 submap[k] = self.model.config.tensor_file_map[ck]
 
+        ## TODO: If loaded with tensorizer, for k, v in submap.items(), v will be the tensor itself
+        ## instead of having to load it from the file.
         for k, v in submap.items():
             if v not in submap_i:
                 submap_i[v] = []
             submap_i[v].append(k)
 
         for v, ks in submap_i.items():
-            stfile = STFile.open(v, fast = self.model.config.fasttensors, keymap = self.model.config.arch.keymap)
+            stfile = TensorFile.open(v, fast = self.model.config.fasttensors, keymap = self.model.config.arch.keymap)
             for k in ks:
                 if measure:
                     size += stfile.measure(key + "." + k)
@@ -88,7 +103,7 @@ class ExLlamaV2Module:
 
         return size if measure else tensors
 
-
+    @tensorizer_wrapper
     def load_weight(self,
                     override_key: str | None = None):
 
@@ -99,6 +114,9 @@ class ExLlamaV2Module:
             if self.alt_key is not None:
                 keys += [self.alt_key]
 
+        ## TODO: Easiest way to implement this, is to allow the tensor_file_map
+        ##       to instead be a dict[str, Tensor] rather than dict[str, File] directly
+        ##       instead of loading it and then can just pass it the tensorized state dict
         for key in keys:
 
             # EXL2
@@ -119,6 +137,8 @@ class ExLlamaV2Module:
 
             # Torch
 
+            ## TODO: This may be easier to apply a decorator to and just consume
+            ##       something with the output of this function
             if key + ".weight" in self.model.config.tensor_file_map:
                 if key + ".bias" in self.model.config.tensor_file_map:
                     tensors = self.load_multi(key, ["weight", "bias"])
@@ -154,7 +174,7 @@ class ExLlamaV2Module:
             filename = cfg.tensor_file_map.get(key)
             if not filename: continue
 
-            stfile = STFile.open(filename, fast = cfg.fasttensors, keymap = cfg.arch.keymap)
+            stfile = TensorFile.open(filename, fast = cfg.fasttensors, keymap = cfg.arch.keymap)
             # tensor = stfile.get_tensor(key, device = self.device()).half()
             tensor = stfile.get_tensor(key, device = "cpu", cached = True, out_dtype = torch.half)
 
