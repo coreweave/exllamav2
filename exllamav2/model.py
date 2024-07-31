@@ -246,6 +246,7 @@ class ExLlamaV2:
         self.config = config
         self.modules = []
         self.modules_dict = {}
+        self.state_dict = {}
         self.device_tensors = []
         self.cache_map = {}
         self.loaded = False
@@ -280,6 +281,11 @@ class ExLlamaV2:
         if self.config.arch.norm == "layernorm": norm = ExLlamaV2LayerNorm(self, "model.norm")
         elif self.config.arch.norm == "rmsnorm": norm = ExLlamaV2RMSNorm(self, "model.norm")
         else: raise ValueError("unknown norm type")
+
+        if self.config.use_tensorizer:
+            from tensorizer import TensorDeserializer
+            self.state_dict = TensorDeserializer(os.path.join(self.config.model_dir, "model.tensors"))
+
         self.modules += [norm]
 
         self.head_layer_idx = len(self.modules)
@@ -313,6 +319,22 @@ class ExLlamaV2:
                 break
 
         self.last_kv_layer_idx = layer_idx
+
+    def serialize(self, serialized_dir: str = None):
+        from tensorizer import TensorSerializer
+        import shutil
+
+        if not serialized_dir:
+            serialized_dir = self.config.serialized_dir
+        os.path.join(self.config.model_dir, "config.json")
+        serializer = TensorSerializer(
+            os.path.join(serialized_dir,"model.tensors"))
+        serializer.write_state_dict(self.state_dict)
+        serializer.close()
+
+        # Open the destination file and write the JSON content
+        shutil.copyfile(os.path.join(self.config.model_dir, "config.json"),
+                        os.path.join(serialized_dir, "config.json"))
 
 
     def set_device_map(self,

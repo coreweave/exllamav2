@@ -17,9 +17,9 @@ def _torch_device(idx: int) -> str:
 def tensorizer_wrapper(func):
     def decorator(*args):
         params = func(*args)
-        if args[0].model.config.tensorizer:
+        if args[0].model.config.tensorize:
             if len(params) > 1:
-                args[0].state_dict[args[0].key + ".weight"] = params[0]
+                args[0].model.state_dict[args[0].key + ".weight"] = params[0]
                 args[0].model.state_dict[args[0].key + ".bias"] = params[1]
             else:
                 args[0].model.state_dict[args[0].key + ".weight"] = params
@@ -80,6 +80,8 @@ class ExLlamaV2Module:
         size = 0
 
         # key = self.key if override_key is None else override_key
+        if self.model.config.use_tensorizer:
+            return self.model.state_dict[key]
 
         for k in keys:
             ck = key + "." + k

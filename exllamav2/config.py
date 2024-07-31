@@ -74,7 +74,10 @@ class ExLlamaV2Config:
     model_config: str
     tensor_file_map: dict
     tensor_files: list
+
+    tensorize: bool
     use_tensorizer: bool
+    serialized_dir: str
 
     tokenizer_path: str
 
@@ -325,8 +328,8 @@ class ExLlamaV2Config:
 
         if self.use_tensorizer:
             from tensorizer import TensorDeserializer
-            model_loc = os.environ["TENSORIZER_LOC"]
-            self.tensor_file_map = TensorDeserializer(model_loc, lazy_load=True)
+            model_loc = self.serialized_dir or os.environ["TENSORIZER_LOC"]
+            self.tensor_file_map = TensorDeserializer(os.path.join(model_loc, "model.tensors"), lazy_load=True)
 
         ## TODO: Need to not enforce trying to look for .safetensors
         if len(self.tensor_files) == 0 and not self.use_tensorizer:
