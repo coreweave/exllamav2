@@ -324,6 +324,7 @@ class ExLlamaV2:
         from tensorizer import TensorSerializer
         import shutil
 
+        torch.cuda.empty_cache()
         if not serialized_dir:
             serialized_dir = self.config.serialized_dir
         os.path.join(self.config.model_dir, "config.json")
@@ -456,7 +457,10 @@ class ExLlamaV2:
 
         with torch.inference_mode():
 
-            stats_ = self.set_device_map(gpu_split or [99999])
+            if self.config.use_tensorizer:
+                stats_ = self.set_device_map(gpu_split or [99999], embed_cpu = False)
+            else:
+                stats_ = self.set_device_map(gpu_split or [99999])
 
             # Load module weights
 

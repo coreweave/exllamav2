@@ -326,6 +326,7 @@ class ExLlamaV2Config:
         st_pattern = os.path.join(self.model_dir, "*.safetensors")
         self.tensor_files = glob.glob(st_pattern)
 
+        # Even though this is lazy loaded, may be wasteful to have two TensorDeserializer instances
         if self.use_tensorizer:
             from tensorizer import TensorDeserializer
             model_loc = self.serialized_dir or os.environ["TENSORIZER_LOC"]

@@ -14,20 +14,6 @@ def _torch_device(idx: int) -> str:
     if idx == -1: return "cpu"
     return f"cuda:{idx}"
 
-def tensorizer_wrapper(func):
-    def decorator(*args):
-        params = func(*args)
-        if args[0].model.config.tensorize:
-            if len(params) > 1:
-                args[0].model.state_dict[args[0].key + ".weight"] = params[0]
-                args[0].model.state_dict[args[0].key + ".bias"] = params[1]
-            else:
-                args[0].model.state_dict[args[0].key + ".weight"] = params
-            return params
-        else:
-            return params
-    return decorator
-
 class ExLlamaV2Module:
 
     config: ExLlamaV2Config
@@ -81,7 +67,14 @@ class ExLlamaV2Module:
 
         # key = self.key if override_key is None else override_key
         if self.model.config.use_tensorizer:
-            return self.model.state_dict[key]
+            for k in keys:
+                ck = key + "." + k
+                if measure:
+                    if ck in self.model.state_dict:
+                        size += int(self.model.state_dict[ck].nbytes)
+                elif ck in self.model.state_dict.keys():
+                    tensors[k] = self.model.state_dict[ck]
+            return size if measure else tensors
 
         for k in keys:
             ck = key + "." + k
@@ -102,10 +95,11 @@ class ExLlamaV2Module:
                     size += stfile.measure(key + "." + k)
                 else:
                     tensors[k] = stfile.get_tensor(key + "." + k, device = self.device())
+                    if self.model.config.tensorize:
+                        self.model.state_dict[key + "." + k] = tensors[k]
 
         return size if measure else tensors
 
-    @tensorizer_wrapper
     def load_weight(self,
                     override_key: str | None = None):
 
