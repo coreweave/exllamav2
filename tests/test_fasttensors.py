@@ -2,7 +2,7 @@ import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
-from exllamav2.fasttensors import TensorFile
+from exllamav2.fasttensors import STFile
 from exllamav2.ext import exllamav2_ext as ext_c
 
 import time
@@ -32,7 +32,7 @@ stfiles = \
 
 for stfile in stfiles:
     stfile_size = os.path.getsize(stfile)
-    sttest = TensorFile(stfile)
+    sttest = STFile(stfile)
 
     # List tensors
 

@@ -40,7 +40,7 @@ def cleanup_stfiles():
     ext_c.safetensors_free_pinned_buffer()
 
 
-class TensorFile:
+class STFile:
 
     filename: str
     header: dict
@@ -67,7 +67,6 @@ class TensorFile:
         self.tensor_remap = None
 
         self.read_dict()
-
 
         if keymap:
             self.tensor_remap = {}
@@ -104,7 +103,7 @@ class TensorFile:
     @staticmethod
     def open(filename,
              fast = True,
-             keymap: list[tuple[str, str]] = None) -> TensorFile:
+             keymap: list[tuple[str, str]] = None) -> STFile:
         """
         Open safetensors file, scan header and retain handle.
 
@@ -122,11 +121,9 @@ class TensorFile:
         """
 
         global global_stfiles
-
-        # TODO: Need to figure out where this will go wrong in the callstack
         for f in global_stfiles:
             if f.filename == filename: return f
-        return TensorFile(filename, fast, keymap)
+        return STFile(filename, fast, keymap)
 
 
     def close(self):
@@ -192,16 +189,13 @@ class TensorFile:
                    out_dtype = None) -> torch.Tensor:
         global global_tensorcache
 
-
         if self.tensor_remap and (not_fast or not self.fast):
             key = self.tensor_remap[key]
-
 
         if cached:
             cachekey = self.filename + "::" + key + "::" + device
             for (k, v) in global_tensorcache:
                 if k == cachekey: return v
-
 
         if not_fast or (not self.fast and not self.fast_fb):
 

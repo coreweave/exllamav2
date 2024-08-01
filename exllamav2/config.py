@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 import math
-from exllamav2.fasttensors import TensorFile
+from exllamav2.fasttensors import STFile
 from exllamav2.architecture import ExLlamaV2ArchParams
 import os, glob, json
 from typing import Any, Dict, List, TypeVar, Union, cast
@@ -337,7 +337,7 @@ class ExLlamaV2Config:
             raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
 
         for st_file in self.tensor_files:
-            f = TensorFile.open(st_file, fast = self.fasttensors, keymap = self.arch.keymap)
+            f = STFile.open(st_file, fast = self.fasttensors, keymap = self.arch.keymap)
             for key in f.get_dict():
                 self.tensor_file_map[key] = st_file
 
@@ -351,7 +351,8 @@ class ExLlamaV2Config:
         else:
             self.checkpoint_fused_mlp = False
 
-    # Make sure we found all the layers we need
+        # Make sure we found all the layers we need
+
         expect_keys = self.arch.expect_keys.copy()
 
         if not self.num_experts or self.num_experts == 1:
@@ -383,7 +384,6 @@ class ExLlamaV2Config:
                 if match: break
             if not match:
                 raise ValueError(f" ## Could not find {prefix}.* in model")
-
 
         x = 0
 

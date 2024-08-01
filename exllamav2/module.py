@@ -2,7 +2,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 from exllamav2.config import ExLlamaV2Config
-from exllamav2.fasttensors import TensorFile
+from exllamav2.fasttensors import STFile
 from exllamav2.compat import safe_move_tensor
 
 from typing import TYPE_CHECKING
@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 def _torch_device(idx: int) -> str:
     if idx == -1: return "cpu"
     return f"cuda:{idx}"
+
 
 class ExLlamaV2Module:
 
@@ -89,7 +90,7 @@ class ExLlamaV2Module:
             submap_i[v].append(k)
 
         for v, ks in submap_i.items():
-            stfile = TensorFile.open(v, fast = self.model.config.fasttensors, keymap = self.model.config.arch.keymap)
+            stfile = STFile.open(v, fast = self.model.config.fasttensors, keymap = self.model.config.arch.keymap)
             for k in ks:
                 if measure:
                     size += stfile.measure(key + "." + k)
@@ -99,6 +100,7 @@ class ExLlamaV2Module:
                         self.model.state_dict[key + "." + k] = tensors[k]
 
         return size if measure else tensors
+
 
     def load_weight(self,
                     override_key: str | None = None):
@@ -110,9 +112,6 @@ class ExLlamaV2Module:
             if self.alt_key is not None:
                 keys += [self.alt_key]
 
-        ## TODO: Easiest way to implement this, is to allow the tensor_file_map
-        ##       to instead be a dict[str, Tensor] rather than dict[str, File] directly
-        ##       instead of loading it and then can just pass it the tensorized state dict
         for key in keys:
 
             # EXL2
@@ -133,8 +132,6 @@ class ExLlamaV2Module:
 
             # Torch
 
-            ## TODO: This may be easier to apply a decorator to and just consume
-            ##       something with the output of this function
             if key + ".weight" in self.model.config.tensor_file_map:
                 if key + ".bias" in self.model.config.tensor_file_map:
                     tensors = self.load_multi(key, ["weight", "bias"])
@@ -170,7 +167,7 @@ class ExLlamaV2Module:
             filename = cfg.tensor_file_map.get(key)
             if not filename: continue
 
-            stfile = TensorFile.open(filename, fast = cfg.fasttensors, keymap = cfg.arch.keymap)
+            stfile = STFile.open(filename, fast = cfg.fasttensors, keymap = cfg.arch.keymap)
             # tensor = stfile.get_tensor(key, device = self.device()).half()
             tensor = stfile.get_tensor(key, device = "cpu", cached = True, out_dtype = torch.half)
 
