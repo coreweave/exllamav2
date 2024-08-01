@@ -1,34 +1,21 @@
-import tensorizer
-import pytest
-import exllamav2.embedding
-
-from exllamav2.generator import (
-    ExLlamaV2BaseGenerator,
-    ExLlamaV2StreamingGenerator,
-    ExLlamaV2Sampler
-)
-
+import argparse
+import base64
+import json
+import os
 import time
 
-
-from get_state_dict import load_state_dict_into_model, get_state_dict
-from tensorizer import TensorDeserializer, TensorSerializer
-import numpy as np
-import os
-
-from exllamav2 import(
+from exllamav2 import (
     ExLlamaV2,
     ExLlamaV2Config,
-    ExLlamaV2Cache,
     ExLlamaV2Cache_8bit,
     ExLlamaV2Tokenizer,
 )
+from exllamav2.generator import (
+    ExLlamaV2BaseGenerator,
+    ExLlamaV2Sampler
+)
 
 # Assumes file locations used here exist locally
-
-
-from exllamav2.model_init import init
-import argparse
 
 model_dir = "../downloaded_models/model"
 serialized_dir = "../downloaded_models/tensorized"
@@ -64,7 +51,7 @@ def load_model(model_dir, split = None, cache_8bit = True, serialize = False, us
     return model, tokenizer, cache
 
 
-def test_tensorizer_load():
+def tensorizer_load():
     os.environ['TENSORIZER'] = '1'
     os.environ['TENSORIZER_LOC'] = "../downloaded_models/tensorized/serialized_llama_state_dict.tensors"
     gc.collect()
@@ -73,9 +60,8 @@ def test_tensorizer_load():
     model_dir = "../downloaded_models/tensorized/"
     model_a = load_model(model_dir=model_dir)
 
-import copy
 
-def test_gen(model, tokenizer, cache, prompt, max_new_tokens):
+def gen(model, tokenizer, cache, prompt, max_new_tokens):
     print("--------------------------------")
     print("Generating, normal")
     print()
@@ -102,14 +88,14 @@ def test_gen(model, tokenizer, cache, prompt, max_new_tokens):
     return output
 
 
-def get_model_a_mods(model_dir):
+def get_model_a_outputs(model_dir):
     model_a , tokenizer, cache= load_model(model_dir=model_dir, serialize=True)
     output = test_gen(model_a, tokenizer, cache, "Once upon a time,", 128)
     model_a.unload()
     del model_a
     return output
 
-def get_model_b_mods(serialized_dir):
+def get_model_b_outputs(serialized_dir):
     model_b, tokenizer, cache = load_model(model_dir=serialized_dir, use_tensorizer=True)
     output = test_gen(model_b, tokenizer, cache, "Once upon a time,", 128)
     model_b.unload()
@@ -117,34 +103,76 @@ def get_model_b_mods(serialized_dir):
     return output
 
 
+def get_tensors(module):
+    k = module.key
+    if hasattr(module, "get_weight"):
+        w = module.get_weight()
+        if isinstance(w, tuple):
+            yield (f"{k}.weight", w[0])
+            yield (f"{k}.bias", w[1])
+        else:
+            yield (f"{k}.weight", w)
+    for submodule in module.submodules:
+        yield from get_tensors(submodule)
+
+def extract_tensors(model):
+    for module in model.modules:
+        yield from get_tensors(module)
+
+import hashlib
+
+def tensor_hash(t):
+    mv = t.cpu().numpy().data
+    h = hashlib.sha256()
+    h.update(str(t.dtype).encode("ascii"))
+    h.update(b"\0")
+    h.update(str(tuple(t.size())).encode("ascii"))
+    h.update(b"\0")
+    h.update(mv)
+    return h.digest()
+
+
+# The next two tests are to save tensors for comparison
+# in `test_tensorizer_loaded_is_same_model`, and are meant to be
+# ran, rather ungracefully, in separate processes,
+# for memory management reasons
+def test_get_hashed_tensors_from_normal_model():
+    model, tokenizer, cache = load_model(model_dir=model_dir, serialize=True)
+
+    marker = "normal"
+
+    state_dict = dict(extract_tensors(model))
+
+    hash_dict = {k: base64.b64encode(tensor_hash(v)) for k, v in
+                 state_dict.items()}
+
+    with open(f'{model_dir}/hash_dict_{marker}.json', "w") as file:
+        json.dump({k: v.decode("ascii") for k, v in hash_dict.items()}, file)
+
+    ## Lazy assertion here but mostly just to save the tensors
+    assert hash_dict
+
+def test_get_hashed_tensors_from_deserialized_model():
+    model, tokenizer, cache = load_model(model_dir=serialized_dir, use_tensorizer=True)
+
+    marker = "tensorized"
+
+    state_dict = dict(extract_tensors(model))
+
+    hash_dict = {k: base64.b64encode(tensor_hash(v)) for k, v in
+                 state_dict.items()}
+
+    with open(f'{serialized_dir}/hash_dict_{marker}.json', "w") as file:
+        json.dump({k: v.decode("ascii") for k, v in hash_dict.items()}, file)
+
+    ## Lazy assertion here but mostly just to save the tensors
+    assert hash_dict
+
+
+
 def test_tensorizer_loaded_is_same_model():
-    gc.collect()
-    torch.cuda.empty_cache()
-    print(torch.cuda.mem_get_info())
 
+    hash_dict_a = json.load(open(f'{model_dir}/hash_dict_normal.json'))
+    hash_dict_b = json.load(open(f'{serialized_dir}/hash_dict_tensorized.json'))
 
-    model_dir = "../downloaded_models/model"
-    serialized_dir = "../downloaded_models/tensorized"
-
-    model_a_output = get_model_a_mods(model_dir)
-
-    gc.collect()
-    torch.cuda.empty_cache()
-    print(torch.cuda.mem_get_info())
-
-
-    #model_b_output = get_model_b_mods(serialized_dir)
-
-
-
-    gc.collect()
-    torch.cuda.empty_cache()
-    print(torch.cuda.mem_get_info())
-
-
-
-
-    #assert model_a_output == model_b_output
-
-
-
+    assert hash_dict_a == hash_dict_b
