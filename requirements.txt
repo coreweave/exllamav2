@@ -14,4 +14,8 @@ tokenizers~=0.19.1
 rich~=13.7.1
 tqdm~=4.66.4
 transformers~=4.43.3
+
+# TODO: I'm importing tensorizer only in instances
+#       when tensorizer is explicitly invoked. Should I therefore make this
+#       a required dependency..?
 tensorizer~=2.9.0
