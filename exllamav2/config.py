@@ -337,10 +337,11 @@ class ExLlamaV2Config:
         if len(self.tensor_files) == 0 and not self.load_with_tensorizer:
             raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
 
-        for st_file in self.tensor_files:
-            f = STFile.open(st_file, fast = self.fasttensors, keymap = self.arch.keymap)
-            for key in f.get_dict():
-                self.tensor_file_map[key] = st_file
+        if not self.load_with_tensorizer:
+            for st_file in self.tensor_files:
+                f = STFile.open(st_file, fast = self.fasttensors, keymap = self.arch.keymap)
+                for key in f.get_dict():
+                    self.tensor_file_map[key] = st_file
 
 
         # For loading checkpoints with fused MLP layers
