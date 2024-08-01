@@ -1,4 +1,3 @@
-import argparse
 import base64
 import json
 import os
@@ -15,16 +14,17 @@ from exllamav2.generator import (
     ExLlamaV2Sampler
 )
 
-# Assumes file locations used here exist locally
+# Note: code here is very unrefined and sloppy; primarily used for
+# getting POC
 
 model_dir = "../downloaded_models/model"
 serialized_dir = "../downloaded_models/tensorized"
 import torch
 import gc
 
-mock_args = argparse.Namespace(eval_dataset=None, eval_rows=128, eval_length=2048, eval_token=False, eval_token_8bit=False, eval_token_q4=False, eval_token_q6=False, eval_token_q8=False, eval_context_lens=False, prompt='Once upon a time,', prompt_no_bos=False, tokens=128, prompt_speed=False, speed=False, mix_layers=None, no_warmup=False, stream_layers=False, standard_perplexity=None, rank_reduce=None, max_output_len=None, tensorizer=True, model_dir='downloaded_models/model', gpu_split=None, length=None, rope_scale=None, rope_alpha=None, no_flash_attn=False, no_xformers=False, no_sdpa=False, low_mem=False, experts_per_token=None, load_q4=False, fast_safetensors=False, ignore_compatibility=False, chunk_size=None)
 
-def load_model(model_dir, split = None, cache_8bit = True, serialize = False, use_tensorizer=False):
+def load_model(model_dir, split=None, cache_8bit=True, serialize=False,
+               use_tensorizer=False):
     global model, config, tokenizer, cache
 
     config = ExLlamaV2Config()
@@ -33,7 +33,6 @@ def load_model(model_dir, split = None, cache_8bit = True, serialize = False, us
     config.load_with_tensorizer = use_tensorizer
     if config.load_with_tensorizer:
         config.serialized_dir = serialized_dir
-
 
     config.prepare()
 
@@ -54,7 +53,8 @@ def load_model(model_dir, split = None, cache_8bit = True, serialize = False, us
 
 def tensorizer_load():
     os.environ['TENSORIZER'] = '1'
-    os.environ['TENSORIZER_LOC'] = "../downloaded_models/tensorized/serialized_llama_state_dict.tensors"
+    os.environ[
+        'TENSORIZER_LOC'] = "../downloaded_models/tensorized/serialized_llama_state_dict.tensors"
     gc.collect()
     torch.cuda.empty_cache()
 
@@ -70,7 +70,7 @@ def gen(model, tokenizer, cache, prompt, max_new_tokens):
     generator = ExLlamaV2BaseGenerator(model, cache, tokenizer)
 
     settings = ExLlamaV2Sampler.Settings()
-    settings.temperature = 0 # Keep it purely deterministic to ensure weights are the same
+    settings.temperature = 0  # Keep it purely deterministic to ensure weights are the same
     settings.top_k = 50
     settings.top_p = 0.8
     settings.top_a = 0.0
@@ -80,27 +80,13 @@ def gen(model, tokenizer, cache, prompt, max_new_tokens):
     generator.warmup()
     time_begin = time.time()
 
-    output = generator.generate_simple(prompt, settings, max_new_tokens, seed=1234)
+    output = generator.generate_simple(prompt, settings, max_new_tokens,
+                                       seed=1234)
 
     time_end = time.time()
     time_total = time_end - time_begin
 
     print(output)
-    return output
-
-
-def get_model_a_outputs(model_dir):
-    model_a , tokenizer, cache= load_model(model_dir=model_dir, serialize=True)
-    output = test_gen(model_a, tokenizer, cache, "Once upon a time,", 128)
-    model_a.unload()
-    del model_a
-    return output
-
-def get_model_b_outputs(serialized_dir):
-    model_b, tokenizer, cache = load_model(model_dir=serialized_dir, use_tensorizer=True)
-    output = test_gen(model_b, tokenizer, cache, "Once upon a time,", 128)
-    model_b.unload()
-    del model_b
     return output
 
 
@@ -116,11 +102,14 @@ def get_tensors(module):
     for submodule in module.submodules:
         yield from get_tensors(submodule)
 
+
 def extract_tensors(model):
     for module in model.modules:
         yield from get_tensors(module)
 
+
 import hashlib
+
 
 def tensor_hash(t):
     mv = t.cpu().numpy().data
@@ -153,8 +142,10 @@ def test_get_hashed_tensors_from_normal_model():
     ## Lazy assertion here but mostly just to save the tensors
     assert hash_dict
 
+
 def test_get_hashed_tensors_from_deserialized_model():
-    model, tokenizer, cache = load_model(model_dir=serialized_dir, use_tensorizer=True)
+    model, tokenizer, cache = load_model(model_dir=serialized_dir,
+                                         use_tensorizer=True)
 
     marker = "tensorized"
 
@@ -170,9 +161,7 @@ def test_get_hashed_tensors_from_deserialized_model():
     assert hash_dict
 
 
-
 def test_tensorizer_loaded_is_same_model():
-
     hash_dict_a = json.load(open(f'{model_dir}/hash_dict_normal.json'))
     hash_dict_b = json.load(open(f'{serialized_dir}/hash_dict_tensorized.json'))
 
