@@ -45,7 +45,7 @@ def load_model(model_dir, split = None, cache_8bit = True, serialize = False, us
     tokenizer = ExLlamaV2Tokenizer(config)
 
     if serialize:
-        from exllamav2.tensorizer import serialize
+        from util.serialize_with_tensorizer import serialize
         serialize(model, serialized_dir)
 
     cache = ExLlamaV2Cache_8bit(model, batch_size=4)
