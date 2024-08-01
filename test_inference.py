@@ -63,7 +63,6 @@ parser.add_argument("-sl", "--stream_layers", action = "store_true", help = "Loa
 parser.add_argument("-sp", "--standard_perplexity", choices = ["wiki2"], help = "Run standard (HF) perplexity test, stride 512 (experimental)")
 parser.add_argument("-rr", "--rank_reduce", type = str, help = "Rank-reduction for MLP layers of model, in reverse order (for experimentation)")
 parser.add_argument("-mol", "--max_output_len", type = int, help = "Set max output chunk size (incompatible with ppl tests)")
-parser.add_argument("-te", "--tensorizer", action = "store_true", help = "Load with tensorizer")
 
 # Initialize model and tokenizer
 
@@ -106,13 +105,6 @@ cache = None
 
 # Auto split
 
-if args.tensorizer:
-    from get_state_dict import load_state_dict_into_model
-    from tensorizer import TensorDeserializer
-    with open("downloaded_models/tensorized/serialized_llama_state_dict.tensors", "rb") as f:
-        state_dict = TensorDeserializer(f)
-        load_state_dict_into_model(model, state_dict)
-
 if not model.loaded and not args.stream_layers:
 
     if args.mix_layers:
@@ -121,9 +113,7 @@ if not model.loaded and not args.stream_layers:
     print(" -- Loading model...")
     cache = ExLlamaV2Cache(model, lazy = True)
     t = time.time()
-
     model.load_autosplit(cache)
-
     t = time.time() - t
     print(f" -- Loaded model in {t:.4f} seconds")
 
@@ -572,20 +562,6 @@ if args.prompt_speed:
             current_len_ = current_len
             current_len = min(current_len + step, model.config.max_seq_len)
             if current_len == current_len_: break
-
-# Try to serialize tensors
-
-# if args.serialize:
-from tensorizer import TensorSerializer
-from get_state_dict import get_state_dict
-
-save_loc = "downloaded_models/tensorized/serialized_llama_state_dict.tensors"
-
-model.state_dict = get_state_dict(model.modules_dict)
-serializer = TensorSerializer(save_loc)
-
-serializer.write_state_dict(model.state_dict)
-serializer.close()
 
 
 # Test token speed
