@@ -51,14 +51,11 @@ class TensorFile:
     fast: bool
     st_context = None
     tensor_remap: dict | None
-    use_tensorizer: bool = False
-    tensorizer_state_dict: dict | None
 
     def __init__(self,
                  filename: str,
                  fast: bool = True,
-                 keymap: list[tuple[str, str]] = None,
-                 use_tensorizer: bool = False):
+                 keymap: list[tuple[str, str]] = None):
 
         global global_stfiles
 
@@ -68,18 +65,9 @@ class TensorFile:
         self.filename = filename
         self.st_context = None
         self.tensor_remap = None
-        self.use_tensorizer = use_tensorizer
 
         self.read_dict()
 
-        ## TODO: For this..
-        if self.use_tensorizer:
-            from tensorizer import TensorDeserializer
-            with open(self.filename) as f:
-                self.tensorizer_state_dict = TensorDeserializer(f)
-
-            ## deserialize state dict by self.name
-            ## save state dict to self.tensorizer_state_dict
 
         if keymap:
             self.tensor_remap = {}
@@ -136,12 +124,9 @@ class TensorFile:
         global global_stfiles
 
         # TODO: Need to figure out where this will go wrong in the callstack
-        use_tensorizer = False
         for f in global_stfiles:
             if f.filename == filename: return f
-        if filename.endswith(".tensors"):
-            use_tensorizer = True
-        return TensorFile(filename, fast, keymap, use_tensorizer=use_tensorizer)
+        return TensorFile(filename, fast, keymap)
 
 
     def close(self):
@@ -217,9 +202,6 @@ class TensorFile:
             for (k, v) in global_tensorcache:
                 if k == cachekey: return v
 
-        ## TODO: This is where I'll retrieve the state_dict I deserialized
-        if self.use_tensorizer:
-            return self.tensorizer_state_dict[key]
 
         if not_fast or (not self.fast and not self.fast_fb):
 
