@@ -282,7 +282,7 @@ class ExLlamaV2:
         elif self.config.arch.norm == "rmsnorm": norm = ExLlamaV2RMSNorm(self, "model.norm")
         else: raise ValueError("unknown norm type")
 
-        if self.config.use_tensorizer:
+        if self.config.load_with_tensorizer:
             from tensorizer import TensorDeserializer
             self.state_dict = TensorDeserializer(os.path.join(self.config.model_dir, "model.tensors"))
 
@@ -319,23 +319,6 @@ class ExLlamaV2:
                 break
 
         self.last_kv_layer_idx = layer_idx
-
-    def serialize(self, serialized_dir: str = None):
-        from tensorizer import TensorSerializer
-        import shutil
-
-        torch.cuda.empty_cache()
-        if not serialized_dir:
-            serialized_dir = self.config.serialized_dir
-        os.path.join(self.config.model_dir, "config.json")
-        serializer = TensorSerializer(
-            os.path.join(serialized_dir,"model.tensors"))
-        serializer.write_state_dict(self.state_dict)
-        serializer.close()
-
-        # Open the destination file and write the JSON content
-        shutil.copyfile(os.path.join(self.config.model_dir, "config.json"),
-                        os.path.join(serialized_dir, "config.json"))
 
 
     def set_device_map(self,
@@ -457,7 +440,7 @@ class ExLlamaV2:
 
         with torch.inference_mode():
 
-            if self.config.use_tensorizer:
+            if self.config.load_with_tensorizer:
                 stats_ = self.set_device_map(gpu_split or [99999], embed_cpu = False)
             else:
                 stats_ = self.set_device_map(gpu_split or [99999])

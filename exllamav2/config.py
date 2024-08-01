@@ -75,9 +75,10 @@ class ExLlamaV2Config:
     tensor_file_map: dict
     tensor_files: list
 
-    tensorize: bool
-    use_tensorizer: bool
-    serialized_dir: str
+    # Tensorizer args
+    write_state_dict: bool                      # Whether to construct a state_dict, necessary for serializing with `tensorizer`
+    load_with_tensorizer: bool                  # Deserialize tensors with `tensorizer`. Model tensors are expected to be found in model_dir/model.tensors or 'TENSORIZER_LOC'
+    # TODO: May want to raise a NameError/ValueError/warning if no model.tensors file can be found in model_dir/*
 
     tokenizer_path: str
 
@@ -142,7 +143,7 @@ class ExLlamaV2Config:
         self.fasttensors = 'EXLLAMA_FASTTENSORS' in os.environ
 
         ## TODO: Think of a nicer way than this
-        self.use_tensorizer = 'TENSORIZER' in os.environ
+        self.load_with_tensorizer = 'TENSORIZER' in os.environ
 
         self.load_in_q4 = False
 
@@ -320,20 +321,20 @@ class ExLlamaV2Config:
 
         if no_tensors: return
 
-        self.tensor_file_map = {}
+        self.tensor_file_map: dict | TensorDeserializer = {}
 
 
         st_pattern = os.path.join(self.model_dir, "*.safetensors")
         self.tensor_files = glob.glob(st_pattern)
 
         # Even though this is lazy loaded, may be wasteful to have two TensorDeserializer instances
-        if self.use_tensorizer:
+        if self.load_with_tensorizer:
             from tensorizer import TensorDeserializer
-            model_loc = self.serialized_dir or os.environ["TENSORIZER_LOC"]
+            model_loc = self.model_dir or os.environ["TENSORIZER_LOC"]
             self.tensor_file_map = TensorDeserializer(os.path.join(model_loc, "model.tensors"), lazy_load=True)
 
         ## TODO: Need to not enforce trying to look for .safetensors
-        if len(self.tensor_files) == 0 and not self.use_tensorizer:
+        if len(self.tensor_files) == 0 and not self.load_with_tensorizer:
             raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
 
         for st_file in self.tensor_files:
