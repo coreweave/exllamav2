@@ -19,3 +19,6 @@ transformers~=4.43.3
 #       when tensorizer is explicitly invoked. Should I therefore make this
 #       a required dependency..?
 tensorizer~=2.9.0
+
+# TODO: Additionally consider whether explicitly specifying versions
+#       for these dependencies is helpful or not?
