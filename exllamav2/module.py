@@ -82,8 +82,6 @@ class ExLlamaV2Module:
             if ck in self.model.config.tensor_file_map:
                 submap[k] = self.model.config.tensor_file_map[ck]
 
-        ## TODO: If loaded with tensorizer, for k, v in submap.items(), v will be the tensor itself
-        ## instead of having to load it from the file.
         for k, v in submap.items():
             if v not in submap_i:
                 submap_i[v] = []

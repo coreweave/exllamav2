@@ -15,7 +15,8 @@ from exllamav2.generator import (
 )
 
 # Note: code here is very unrefined and sloppy; primarily used for
-# getting POC
+# getting POC. Tons of things for the linter to complain about here,
+# but is that a big deal for a test script?
 
 model_dir = "../downloaded_models/model"
 serialized_dir = "../downloaded_models/tensorized"

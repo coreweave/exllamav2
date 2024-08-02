@@ -333,7 +333,6 @@ class ExLlamaV2Config:
             model_loc = self.model_dir or os.environ["TENSORIZER_LOC"]
             self.tensor_file_map = TensorDeserializer(os.path.join(model_loc, "model.tensors"), lazy_load=True)
 
-        ## TODO: Need to not enforce trying to look for .safetensors
         if len(self.tensor_files) == 0 and not self.load_with_tensorizer:
             raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
 
