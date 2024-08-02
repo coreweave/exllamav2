@@ -72,6 +72,8 @@ class ExLlamaV2Module:
                 ck = key + "." + k
                 if measure:
                     if ck in self.model.state_dict:
+                        ## TODO: Verify that this is a valid stand-in for
+                        ##       stfile.measure()
                         size += int(self.model.state_dict[ck].nbytes)
                 elif ck in self.model.state_dict.keys():
                     tensors[k] = self.model.state_dict[ck]
