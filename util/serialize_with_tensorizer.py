@@ -1,13 +1,23 @@
 import os
+import json
+from tensorizer import TensorSerializer, stream_io
+from functools import partial
 
 from exllamav2 import ExLlamaV2, ExLlamaV2Config, ExLlamaV2Tokenizer, \
     ExLlamaV2Cache_8bit
 from exllamav2.generator import ExLlamaV2BaseGenerator, ExLlamaV2Sampler
 
+read_stream, write_stream = (
+    partial(
+        stream_io.open_stream,
+        mode=mode,
+    )
+    for mode in ("rb", "wb+")
+)
 
-def serialize(model, serialized_dir: str = None):
-    from tensorizer import TensorSerializer
-    import shutil
+def serialize(model, serialized_dir: str = None, **kwargs):
+
+
 
     if not model.config.write_state_dict:
         raise ValueError("Model was not loaded with write_state_dict=True, "
@@ -15,27 +25,35 @@ def serialize(model, serialized_dir: str = None):
 
     if not serialized_dir:
         serialized_dir = model.config.serialized_dir
+
     os.path.join(model.config.model_dir, "config.json")
-    serializer = TensorSerializer(
-        os.path.join(serialized_dir, "model.tensors"))
-    serializer.write_state_dict(model.state_dict)
-    serializer.close()
+
+    model_uri = os.path.join(serialized_dir, "model.tensors")
+    with write_stream(model_uri, **kwargs) as stream:
+        serializer = TensorSerializer(stream)
+        serializer.write_state_dict(model.state_dict)
+        serializer.close()
+
+    config_path = os.path.join(serialized_dir, "config.json")
+    with write_stream(config_path, **kwargs) as stream:
+        with open(os.path.join(model.config.model_dir, "config.json")) as f:
+            stream.write(f.read().encode("utf-8"))
 
     # TODO: Should other artifacts be copied? `config.json` is all
     #       that is needed for model loading, but other files are needed
     #       for forward passes like the tokenizer etc
-    if not "config.json" in os.listdir(serialized_dir):
-        shutil.copyfile(os.path.join(model.config.model_dir, "config.json"),
-                        os.path.join(serialized_dir, "config.json"))
 
 
 ## Deserialization example
 
-def deserialize_with_tensorizer(model_dir: str):
+def deserialize_with_tensorizer(model_dir: str, **kwargs):
     config = ExLlamaV2Config()
     config.model_dir = model_dir
     config.load_with_tensorizer = True
     config.prepare()
+
+    for key, value in kwargs.items():
+        setattr(config, key, value)
 
     model = ExLlamaV2(config)
     model.load()

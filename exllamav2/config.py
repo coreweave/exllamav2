@@ -144,6 +144,11 @@ class ExLlamaV2Config:
 
         ## TODO: Think of a nicer way than this
         self.load_with_tensorizer = 'TENSORIZER' in os.environ
+        self.tensorizer_args = {
+            "s3_access_key_id": os.environ.get("S3_ACCESS_KEY_ID"),
+            "s3_secret_access_key": os.environ.get("S3_SECRET_ACCESS_KEY"),
+            "s3_endpoint_url": os.environ.get("S3_ENDPOINT_URL"),
+        }
 
         self.load_in_q4 = False
 
@@ -170,15 +175,24 @@ class ExLlamaV2Config:
     def prepare(self, no_tensors: bool = False):
 
         assert self.model_dir is not None, "No model_dir specified in ExLlamaV2Config"
-        assert os.path.exists(self.model_dir), "Can't find " + self.model_dir
 
-        # Load config.json
+        if not self.load_with_tensorizer:
+            assert os.path.exists(self.model_dir), "Can't find " + self.model_dir
 
-        self.model_config = os.path.join(self.model_dir, "config.json")
-        assert os.path.exists(self.model_config), "Can't find " + self.model_config
+            # Load config.json
 
-        with open(self.model_config, encoding = "utf8") as f:
-            read_config = json.load(f)
+            self.model_config = os.path.join(self.model_dir, "config.json")
+            assert os.path.exists(self.model_config), "Can't find " + self.model_config
+
+            with open(self.model_config, encoding = "utf8") as f:
+                read_config = json.load(f)
+        else:
+            from util.serialize_with_tensorizer import read_stream
+            with read_stream(
+                    os.path.join(self.model_dir, "config.json"),
+                    **self.tensorizer_args) as stream:
+                read_config = json.loads(stream.read().decode("utf-8"))
+
 
         # Load generation_config.json
 

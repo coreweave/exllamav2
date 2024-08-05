@@ -167,3 +167,44 @@ def test_tensorizer_loaded_is_same_model():
     hash_dict_b = json.load(open(f'{serialized_dir}/hash_dict_tensorized.json'))
 
     assert hash_dict_a == hash_dict_b
+
+# TODO: Add test for asserting deserialized config sameness with original config
+def test_serializing_s3():
+    s3_path = os.environ["S3_URI"] if "S3_URI" in os.environ else None
+    s3_access_key_id = os.environ["S3_ACCESS_KEY_ID"] if "S3_ACCESS_KEY_ID" in os.environ else None
+    s3_secret_access_key = os.environ["S3_SECRET_ACCESS_KEY"] if "S3_SECRET_ACCESS_KEY" in os.environ else None
+    s3_endpoint = os.environ["S3_ENDPOINT_URL"] if "S3_ENDPOINT_URL" in os.environ else None
+
+    from util.serialize_with_tensorizer import serialize
+
+    config = ExLlamaV2Config()
+    config.model_dir = model_dir
+    config.write_state_dict = True
+
+    config.prepare()
+
+    model = ExLlamaV2(config)
+    model.load()
+
+    serialize(model,
+              serialized_dir=s3_path,
+              s3_access_key_id=s3_access_key_id,
+              s3_secret_access_key=s3_secret_access_key,
+              s3_endpoint=s3_endpoint
+              )
+
+def test_deserialize_s3():
+    s3_path = os.environ["S3_URI"] if "S3_URI" in os.environ else None
+    s3_access_key_id = os.environ["S3_ACCESS_KEY_ID"] if "S3_ACCESS_KEY_ID" in os.environ else None
+    s3_secret_access_key = os.environ["S3_SECRET_ACCESS_KEY"] if "S3_SECRET_ACCESS_KEY" in os.environ else None
+    s3_endpoint = os.environ["S3_ENDPOINT_URL"] if "S3_ENDPOINT_URL" in os.environ else None
+
+    from util.serialize_with_tensorizer import deserialize_with_tensorizer
+
+    model = deserialize_with_tensorizer(s3_path,
+                                         s3_access_key_id=s3_access_key_id,
+                                         s3_secret_access_key=s3_secret_access_key,
+                                         s3_endpoint=s3_endpoint
+                                         )
+
+    assert model
