@@ -63,6 +63,8 @@ def serialize(model, serialized_dir: str = None, **kwargs):
 def deserialize_with_tensorizer(model_dir: str, **kwargs):
     config = ExLlamaV2Config()
     config.model_dir = model_dir
+
+    # Also can be enabled by specifying `TENSORIZER` in env vars
     config.load_with_tensorizer = True
     config.prepare()
 
@@ -134,10 +136,6 @@ def main():
     serialize(model, serialized_dir)
 
 
-if __name__ == "__main__":
-    main()
-
-
 def io_handler(use_tensorizer: bool) -> ContextManager:
     return _IOHandlerImpl(use_tensorizer)
 
@@ -173,3 +171,7 @@ class _IOHandlerImpl:
     def __exit__(self, exc_type, exc_val, exc_tb):
         builtins.open = self._open
 
+
+
+if __name__ == "__main__":
+    main()
