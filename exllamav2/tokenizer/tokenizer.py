@@ -104,7 +104,7 @@ class ExLlamaV2Tokenizer:
         temp_dir = tempfile.TemporaryDirectory()
 
         ## TODO: This is hideous. Clean this up once it works
-        from util.serialize_with_tensorizer import io_handler, read_stream
+        from util.tensorizer_utils import io_handler, read_stream
         if self.config.load_with_tensorizer:
             with read_stream(
                 os.path.join(self.config.model_dir, "tokenizer.json"),
