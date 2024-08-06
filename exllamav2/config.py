@@ -147,7 +147,7 @@ class ExLlamaV2Config:
         self.tensorizer_args = {
             "s3_access_key_id": os.environ.get("S3_ACCESS_KEY_ID"),
             "s3_secret_access_key": os.environ.get("S3_SECRET_ACCESS_KEY"),
-            "s3_endpoint_url": os.environ.get("S3_ENDPOINT_URL"),
+            "s3_endpoint": os.environ.get("S3_ENDPOINT_URL"),
         }
 
         self.load_in_q4 = False
@@ -344,8 +344,14 @@ class ExLlamaV2Config:
         # Even though this is lazy loaded, may be wasteful to have two TensorDeserializer instances
         if self.load_with_tensorizer:
             from tensorizer import TensorDeserializer
+            from util.serialize_with_tensorizer import read_stream
+
             model_loc = self.model_dir or os.environ["TENSORIZER_LOC"]
-            self.tensor_file_map = TensorDeserializer(os.path.join(model_loc, "model.tensors"), lazy_load=True)
+            with read_stream(
+                    os.path.join(model_loc, "model.tensors"),
+                    **self.tensorizer_args) as stream:
+
+                self.tensor_file_map = TensorDeserializer(stream, lazy_load=True)
 
         if len(self.tensor_files) == 0 and not self.load_with_tensorizer:
             raise ValueError(f" ## No .safetensors files found in {self.model_dir}")

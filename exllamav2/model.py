@@ -284,7 +284,11 @@ class ExLlamaV2:
 
         if self.config.load_with_tensorizer:
             from tensorizer import TensorDeserializer
-            self.state_dict = TensorDeserializer(os.path.join(self.config.model_dir, "model.tensors"))
+            from util.serialize_with_tensorizer import read_stream
+            with read_stream(
+                    os.path.join(self.config.model_dir, "model.tensors"),
+                    **self.config.tensorizer_args) as stream:
+                self.state_dict = TensorDeserializer(stream)
 
         self.modules += [norm]
 
