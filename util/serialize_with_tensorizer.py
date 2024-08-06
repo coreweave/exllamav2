@@ -48,6 +48,11 @@ def serialize(model, serialized_dir: str = None, **kwargs):
         with open(os.path.join(model.config.model_dir, "tokenizer.json")) as f:
             stream.write(f.read().encode("utf-8"))
 
+    tokenizer_config_json_path = os.path.join(serialized_dir, "tokenizer_config.json")
+    with write_stream(tokenizer_config_json_path, **creds) as stream:
+        with open(os.path.join(model.config.model_dir, "tokenizer_config.json")) as f:
+            stream.write(f.read().encode("utf-8"))
+
     # TODO: Should other artifacts be copied? `config.json` is all
     #       that is needed for model loading, but other files are needed
     #       for forward passes like the tokenizer etc
