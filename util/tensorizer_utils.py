@@ -16,41 +16,51 @@ read_stream, write_stream = (
     for mode in ("rb", "wb+")
 )
 
-def serialize(model, serialized_dir: str = None, **kwargs):
+def serialize(model, serialized_dir, s3_creds=None):
 
+    local_config_path = os.path.join(model.config.model_dir, "config.json")
+    local_tokenizer_json_path = os.path.join(model.config.model_dir, "tokenizer.json")
+    local_tokenizer_config_json_path = os.path.join(model.config.model_dir, "tokenizer_config.json")
 
+    for path in (local_config_path, local_tokenizer_json_path):
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File not found: {path}")
+
+    if not os.path.exists(local_tokenizer_config_json_path):
+        print(f"tokenizer_config.json not found at {local_tokenizer_config_json_path}. "
+              f"Skipping..")
 
     if not model.config.write_state_dict:
         raise ValueError("Model was not loaded with write_state_dict=True, "
                          "which is necessary for serialization. ")
 
-    if not serialized_dir:
-        serialized_dir = model.config.serialized_dir
-
-    creds = {
-        "s3_access_key_id": os.environ["S3_ACCESS_KEY_ID"],
-        "s3_secret_access_key": os.environ["S3_SECRET_ACCESS_KEY"]
-    }
+    if not s3_creds:
+        if model.config.tensorizer_args:
+            s3_creds = model.config.tensorizer_args
+        else:
+            raise ValueError("s3_creds is not provided and no credentials "
+                             "are provided as environmental variables. "
+                             "One of these must be provided to serialize.")
 
     model_uri = os.path.join(serialized_dir, "model.tensors")
-    with write_stream(model_uri, **creds) as stream:
+    with write_stream(model_uri, **s3_creds) as stream:
         serializer = TensorSerializer(stream)
         serializer.write_state_dict(model.state_dict)
         serializer.close()
 
     config_path = os.path.join(serialized_dir, "config.json")
-    with write_stream(config_path, **creds) as stream:
-        with open(os.path.join(model.config.model_dir, "config.json")) as f:
+    with write_stream(config_path, **s3_creds) as stream:
+        with open(local_config_path) as f:
             stream.write(f.read().encode("utf-8"))
 
     tokenizer_json_path = os.path.join(serialized_dir, "tokenizer.json")
-    with write_stream(tokenizer_json_path, **creds) as stream:
-        with open(os.path.join(model.config.model_dir, "tokenizer.json")) as f:
+    with write_stream(tokenizer_json_path, **s3_creds) as stream:
+        with open(local_tokenizer_json_path) as f:
             stream.write(f.read().encode("utf-8"))
 
     tokenizer_config_json_path = os.path.join(serialized_dir, "tokenizer_config.json")
-    with write_stream(tokenizer_config_json_path, **creds) as stream:
-        with open(os.path.join(model.config.model_dir, "tokenizer_config.json")) as f:
+    with write_stream(tokenizer_config_json_path, **s3_creds) as stream:
+        with open(local_tokenizer_config_json_path) as f:
             stream.write(f.read().encode("utf-8"))
 
     # TODO: Should other artifacts be copied? `config.json` is all
