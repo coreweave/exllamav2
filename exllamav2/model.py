@@ -234,6 +234,7 @@ class ExLlamaV2:
     config: ExLlamaV2Config
     modules: list[ExLlamaV2Module]
     modules_dict: dict[str: ExLlamaV2Module]
+    state_dict: dict[str: torch.nn.Parameter]
     device_tensors: list[ExLlamaV2DeviceTensors]
     cache_map: dict[int: str]
     last_kv_layer_idx: int
@@ -245,6 +246,7 @@ class ExLlamaV2:
         self.config = config
         self.modules = []
         self.modules_dict = {}
+        self.state_dict = {}
         self.device_tensors = []
         self.cache_map = {}
         self.loaded = False
@@ -279,6 +281,15 @@ class ExLlamaV2:
         if self.config.arch.norm == "layernorm": norm = ExLlamaV2LayerNorm(self, "model.norm")
         elif self.config.arch.norm == "rmsnorm": norm = ExLlamaV2RMSNorm(self, "model.norm")
         else: raise ValueError("unknown norm type")
+
+        if self.config.load_with_tensorizer:
+            from tensorizer import TensorDeserializer
+            from util.tensorizer_utils import read_stream
+            with read_stream(
+                    os.path.join(self.config.model_dir, "model.tensors"),
+                    **self.config.tensorizer_args) as stream:
+                self.state_dict = TensorDeserializer(stream)
+
         self.modules += [norm]
 
         self.head_layer_idx = len(self.modules)
@@ -433,7 +444,10 @@ class ExLlamaV2:
 
         with torch.inference_mode():
 
-            stats_ = self.set_device_map(gpu_split or [99999])
+            if self.config.load_with_tensorizer:
+                stats_ = self.set_device_map(gpu_split or [99999], embed_cpu = False)
+            else:
+                stats_ = self.set_device_map(gpu_split or [99999])
 
             # Load module weights
 

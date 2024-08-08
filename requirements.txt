@@ -12,3 +12,4 @@ regex
 numpy~=1.26.4
 tokenizers
 rich
+tensorizer~=2.9.0
