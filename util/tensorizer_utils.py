@@ -63,11 +63,6 @@ def serialize(model, serialized_dir, s3_creds=None):
         with open(local_tokenizer_config_json_path) as f:
             stream.write(f.read().encode("utf-8"))
 
-    # TODO: Should other artifacts be copied? `config.json` is all
-    #       that is needed for model loading, but other files are needed
-    #       for forward passes like the tokenizer etc
-
-
 ## Deserialization example
 
 def deserialize_with_tensorizer(model_dir: str, **kwargs):
