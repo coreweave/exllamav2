@@ -9,6 +9,10 @@ from exllamav2 import (
     ExLlamaV2Tokenizer,
 )
 
+import pytest
+import torch
+import gc
+
 # Note: code here is very unrefined and sloppy; primarily used for
 # getting POC. Tons of things for the linter to complain about here,
 # but is that a big deal for a test script?
@@ -16,10 +20,16 @@ from exllamav2 import (
 model_dir = "../downloaded_models/model"
 serialized_dir = "../downloaded_models/tensorized"
 
+# Cleanup between tests
+@pytest.fixture(autouse=True)
+def cleanup():
+    yield
+    gc.collect()
+    torch.cuda.empty_cache()
+
 
 def load_model(model_dir, split=None, cache_8bit=True, serialize=False,
                use_tensorizer=False):
-    global model, config, tokenizer, cache
 
     config = ExLlamaV2Config()
     config.model_dir = model_dir
@@ -140,11 +150,15 @@ def test_serializing_s3():
     model = ExLlamaV2(config)
     model.load()
 
+    s3_creds = {
+        "s3_access_key_id": s3_access_key_id,
+        "s3_secret_access_key": s3_secret_access_key,
+        "s3_endpoint": s3_endpoint
+    }
+
     serialize(model,
               s3_path,
-              s3_access_key_id=s3_access_key_id,
-              s3_secret_access_key=s3_secret_access_key,
-              s3_endpoint=s3_endpoint
+              s3_creds=s3_creds
               )
 
 def test_deserialize_s3():
@@ -162,3 +176,11 @@ def test_deserialize_s3():
                                          )
 
     assert model
+
+def test_invalid_tensorizer_config():
+    config = ExLlamaV2Config()
+    config.load_with_tensorizer = True
+    config.write_state_dict = True
+    config.model_dir = "model_dir"
+    with pytest.raises(ValueError):
+        config.prepare()

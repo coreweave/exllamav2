@@ -16,7 +16,19 @@ read_stream, write_stream = (
     for mode in ("rb", "wb+")
 )
 
+def validate_tensorizer_args(config: ExLlamaV2Config) -> None:
+    if config.load_with_tensorizer and config.write_state_dict:
+        raise ValueError("Cannot load with tensorizer and write state dict "
+                         "at the same time. The `write_state_dict` parameter "
+                         "parameter should only be used for serialization, "
+                         "and the `load_with_tensorizer` parameter should "
+                         "only be used for deserialization. ")
+
+
 def serialize(model, serialized_dir, s3_creds=None):
+
+    if not s3_creds:
+        s3_creds = {}
 
     local_config_path = os.path.join(model.config.model_dir, "config.json")
     local_tokenizer_json_path = os.path.join(model.config.model_dir, "tokenizer.json")
@@ -34,14 +46,6 @@ def serialize(model, serialized_dir, s3_creds=None):
         raise ValueError("Model was not loaded with write_state_dict=True, "
                          "which is necessary for serialization. ")
 
-    if not s3_creds:
-        if model.config.tensorizer_args:
-            s3_creds = model.config.tensorizer_args
-        else:
-            raise ValueError("s3_creds is not provided and no credentials "
-                             "are provided as environmental variables. "
-                             "One of these must be provided to serialize.")
-
     model_uri = os.path.join(serialized_dir, "model.tensors")
     with write_stream(model_uri, **s3_creds) as stream:
         serializer = TensorSerializer(stream)
@@ -58,10 +62,11 @@ def serialize(model, serialized_dir, s3_creds=None):
         with open(local_tokenizer_json_path) as f:
             stream.write(f.read().encode("utf-8"))
 
-    tokenizer_config_json_path = os.path.join(serialized_dir, "tokenizer_config.json")
-    with write_stream(tokenizer_config_json_path, **s3_creds) as stream:
-        with open(local_tokenizer_config_json_path) as f:
-            stream.write(f.read().encode("utf-8"))
+    if os.path.exists(local_tokenizer_config_json_path):
+        tokenizer_config_json_path = os.path.join(serialized_dir, "tokenizer_config.json")
+        with write_stream(tokenizer_config_json_path, **s3_creds) as stream:
+            with open(local_tokenizer_config_json_path) as f:
+                stream.write(f.read().encode("utf-8"))
 
 ## Deserialization example
 

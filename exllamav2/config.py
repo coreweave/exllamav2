@@ -142,6 +142,9 @@ class ExLlamaV2Config:
         self.no_sdpa = 'EXLLAMA_NO_SDPA' in os.environ
         self.fasttensors = 'EXLLAMA_FASTTENSORS' in os.environ
 
+        # TODO: Make this exposed in a better way, as it forces config.write_state_dict = True
+        self.write_state_dict = False
+
         ## TODO: Think of a nicer way than this
         self.load_with_tensorizer = 'TENSORIZER' in os.environ
         self.tensorizer_args = {
@@ -149,6 +152,7 @@ class ExLlamaV2Config:
             "s3_secret_access_key": os.environ.get("S3_SECRET_ACCESS_KEY"),
             "s3_endpoint": os.environ.get("S3_ENDPOINT_URL"),
         }
+
 
         self.load_in_q4 = False
 
@@ -175,6 +179,11 @@ class ExLlamaV2Config:
     def prepare(self, no_tensors: bool = False):
 
         assert self.model_dir is not None, "No model_dir specified in ExLlamaV2Config"
+
+
+        if self.load_with_tensorizer or self.write_state_dict:
+            from util.tensorizer_utils import validate_tensorizer_args
+            validate_tensorizer_args(self)
 
         if not self.load_with_tensorizer:
             assert os.path.exists(self.model_dir), "Can't find " + self.model_dir
