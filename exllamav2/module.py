@@ -76,6 +76,17 @@ class ExLlamaV2Module:
         size = 0
 
         # key = self.key if override_key is None else override_key
+        if self.model.config.load_with_tensorizer:
+            for k in keys:
+                ck = key + "." + k
+                if measure:
+                    if ck in self.model.state_dict:
+                        ## TODO: Verify that this is a valid stand-in for
+                        ##       stfile.measure()
+                        size += int(self.model.state_dict[ck].nbytes)
+                elif ck in self.model.state_dict.keys():
+                    tensors[k] = self.model.state_dict[ck]
+            return size if measure else tensors
 
         for k in keys:
             ck = key + "." + k
@@ -94,6 +105,8 @@ class ExLlamaV2Module:
                     size += stfile.measure(key + "." + k)
                 else:
                     tensors[k] = stfile.get_tensor(key + "." + k, device = self.device() if not cpu else "cpu")
+                    if self.model.config.write_state_dict:
+                        self.model.state_dict[key + "." + k] = tensors[k].to(device="cpu", copy=True)
 
         return size if measure else tensors
 
