@@ -53,6 +53,12 @@ def serialize(model, serialized_dir, s3_creds=None):
         serializer.close()
 
     config_path = os.path.join(serialized_dir, "config.json")
+
+    # This is why the tensorizer directory needs to differ from
+    # the local model directory. If write_stream tries to open
+    # config_path for writing, but it's the same as local_config_path,
+    # the file writing model will clear the contents in local_config_path
+    # before reading
     with write_stream(config_path, **s3_creds) as stream:
         with open(local_config_path) as f:
             stream.write(f.read().encode("utf-8"))
