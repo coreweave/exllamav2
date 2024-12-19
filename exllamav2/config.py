@@ -421,8 +421,7 @@ class ExLlamaV2Config:
 
         if no_tensors: return
 
-        self.tensor_file_map: dict = {}
-
+        self.tensor_file_map = {}
 
         st_pattern = os.path.join(self.model_dir, "*.safetensors")
         self.tensor_files = glob.glob(st_pattern)
