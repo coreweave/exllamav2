@@ -1,3 +1,25 @@
+"""
+This module tests exllamav2's ability to save and load tensorizer-serialized
+weights locally and over S3.
+
+To perform these tests, a directory containing model artifacts must be
+provided for local_dir. If these are not found, the test will save some
+to local_dir as a pre-test fixture.
+
+For testing serialization and deserialization to S3, S3 credentials and URI
+can be provided via the following environment variables, with self-explanatory
+meanings:
+
+S3_ACCESS_KEY_ID
+S3_SECRET_ACCESS_KEY
+S3_ENDPOINT_URL
+S3_URI
+
+If S3_URI is not provided, the S3 machinery testing will be skipped. For local
+serialization and deserialization, model weights are saved and loaded from
+/tmp/tensorized, and then the directory is deleted upon completion of the test
+"""
+
 import base64
 import hashlib
 import logging
@@ -19,7 +41,8 @@ import pytest
 import torch
 import gc
 
-local_dir = "/tmp/model"
+local_dir = os.environ[
+    "LOCAL_DIR"] if "LOCAL_DIR" in os.environ else "/tmp/model"
 
 # shutil.rmtree is called on this; edit with care
 _serialized_dir = "/tmp/tensorized"
@@ -75,9 +98,11 @@ def hash_dict_checker() -> callable:
 
 
 @pytest.fixture(scope="session")
-def setup_and_teardown_hash_dict_checker():
+def setup_and_teardown_deserializer_test():
+    # Initialize the hash dict checker
     checker = hash_dict_checker()
     yield checker
+
     # Delete the saved tensors after a test session
     shutil.rmtree(_serialized_dir)
 
@@ -195,9 +220,9 @@ def load_model(save_base_model, request):
 @pytest.mark.parametrize("serialize_model, load_model",
                          [(False, False), (False, True), (True, True)],
                          indirect=True)
-def test_deserialize_model(setup_and_teardown_hash_dict_checker,
+def test_deserialize_model(setup_and_teardown_deserializer_test,
                            tmpdir, serialize_model, load_model):
-    checker = setup_and_teardown_hash_dict_checker
+    checker = setup_and_teardown_deserializer_test
     model, tokenizer, cache = load_model
     state_dict = dict(extract_tensors(model))
 
