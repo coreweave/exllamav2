@@ -151,37 +151,37 @@ class ExLlamaV2Tokenizer:
         else:
             raise FileNotFoundError("No supported tokenizer found.")
 
-            # Attempt to load added tokens from tokenizer.json
+        # Attempt to load added tokens from tokenizer.json
 
-            self.extended_piece_to_id = {}
-            self.unspecial_piece_to_id = {}
+        self.extended_piece_to_id = {}
+        self.unspecial_piece_to_id = {}
 
-            tokenizer_json_path = os.path.join(self.config.model_dir, "tokenizer.json")
-            if os.path.exists(tokenizer_json_path):
-                with open(tokenizer_json_path, encoding = "utf8") as f:
-                    tokenizer_json = json.load(f)
-                    if "added_tokens" in tokenizer_json:
-                        for v in tokenizer_json["added_tokens"]:
-                            if v["special"]:
-                                self.extended_piece_to_id[v["content"]] = v["id"]
-                            else:
-                                self.unspecial_piece_to_id[v["content"]] = v["id"]
+        tokenizer_json_path = os.path.join(self.config.model_dir, "tokenizer.json")
+        if os.path.exists(tokenizer_json_path):
+            with open(tokenizer_json_path, encoding = "utf8") as f:
+                tokenizer_json = json.load(f)
+                if "added_tokens" in tokenizer_json:
+                    for v in tokenizer_json["added_tokens"]:
+                        if v["special"]:
+                            self.extended_piece_to_id[v["content"]] = v["id"]
+                        else:
+                            self.unspecial_piece_to_id[v["content"]] = v["id"]
 
-            # Attempt to load tokenizer_config.json
+        # Attempt to load tokenizer_config.json
 
-            tokenizer_config_json_path = os.path.join(self.config.model_dir, "tokenizer_config.json")
-            if os.path.exists(tokenizer_config_json_path):
-                with open(tokenizer_config_json_path, encoding = "utf8") as f:
-                    self.tokenizer_config_dict = json.load(f)
-            else:
-                self.tokenizer_config_dict = None
+        tokenizer_config_json_path = os.path.join(self.config.model_dir, "tokenizer_config.json")
+        if os.path.exists(tokenizer_config_json_path):
+            with open(tokenizer_config_json_path, encoding = "utf8") as f:
+                self.tokenizer_config_dict = json.load(f)
+        else:
+            self.tokenizer_config_dict = None
 
-            # Add tokens from added_tokens.json if present, assume they're all special
+        # Add tokens from added_tokens.json if present, assume they're all special
 
-            added_tokens_path = os.path.join(self.config.model_dir, "added_tokens.json")
-            if os.path.exists(added_tokens_path):
-                with open(added_tokens_path, encoding = "utf8") as f:
-                    self.extended_piece_to_id.update(json.load(f))
+        added_tokens_path = os.path.join(self.config.model_dir, "added_tokens.json")
+        if os.path.exists(added_tokens_path):
+            with open(added_tokens_path, encoding = "utf8") as f:
+                self.extended_piece_to_id.update(json.load(f))
 
         # Add special tokens from tokenizer_config.json
 
