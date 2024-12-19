@@ -123,8 +123,24 @@ class ExLlamaV2Tokenizer:
 
         # Detect tokenizer model type and initialize
 
-        path_spm = os.path.join(self.config.model_dir, "tokenizer.model")
-        path_hf = os.path.join(self.config.model_dir, "tokenizer.json")
+        # For tensorizer, write the tokenizer files to the model directory
+        # for simplicity
+        import tempfile
+        temp_dir = tempfile.TemporaryDirectory()
+
+        ## TODO: This is hideous. Clean this up once it works
+        from util.tensorizer_utils import io_handler, read_stream
+        if self.config.load_with_tensorizer:
+            with read_stream(
+                os.path.join(self.config.model_dir, "tokenizer.json"),
+                **self.config.tensorizer_args
+            ) as stream:
+                    with open(os.path.join(temp_dir.name, "tokenizer.json"), "wb") as f:
+                        f.write(stream.read())
+            self.config.model_dir = temp_dir.name
+        with io_handler(config.load_with_tensorizer):
+            path_spm = os.path.join(self.config.model_dir, "tokenizer.model")
+            path_hf = os.path.join(self.config.model_dir, "tokenizer.json")
 
         if os.path.exists(path_hf) and not force_spm:
             self.tokenizer_model = ExLlamaV2TokenizerHF(path_hf)
