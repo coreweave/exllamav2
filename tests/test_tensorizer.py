@@ -1,6 +1,12 @@
 import base64
-import json
+import hashlib
+import logging
 import os
+import shutil
+from util.tensorizer_utils import serialize
+
+logging.basicConfig(level=logging.INFO)
+mylogger = logging.getLogger()
 
 from exllamav2 import (
     ExLlamaV2,
@@ -13,46 +19,30 @@ import pytest
 import torch
 import gc
 
-# Note: code here is very unrefined and sloppy; primarily used for
-# getting POC. Tons of things for the linter to complain about here,
-# but is that a big deal for a test script?
+local_dir = "/tmp/model"
 
-model_dir = "../downloaded_models/model"
-serialized_dir = "../downloaded_models/tensorized"
+# shutil.rmtree is called on this; edit with care
+_serialized_dir = "/tmp/tensorized"
 
-# Cleanup between tests
-@pytest.fixture(autouse=True)
-def cleanup():
-    yield
-    gc.collect()
-    torch.cuda.empty_cache()
+s3_access_key_id = os.environ[
+    "S3_ACCESS_KEY_ID"] if "S3_ACCESS_KEY_ID" in os.environ else None
+s3_secret_access_key = os.environ[
+    "S3_SECRET_ACCESS_KEY"] if "S3_SECRET_ACCESS_KEY" in os.environ else None
+s3_endpoint = os.environ[
+    "S3_ENDPOINT_URL"] if "S3_ENDPOINT_URL" in os.environ else None
+s3_uri = os.environ[
+    "S3_URI"] if "S3_URI" in os.environ else None
 
 
-def load_model(model_dir, split=None, cache_8bit=True, serialize=False,
-               use_tensorizer=False):
-
-    config = ExLlamaV2Config()
-    config.model_dir = model_dir
-    config.write_state_dict = serialize
-    config.load_with_tensorizer = use_tensorizer
-    if config.load_with_tensorizer:
-        config.serialized_dir = serialized_dir
-
-    config.prepare()
-
-    model = ExLlamaV2(config)
-    print(" -- Loading model: " + model_dir)
-
-    model.load(split)
-
-    tokenizer = ExLlamaV2Tokenizer(config)
-
-    if serialize:
-        from util.tensorizer_utils import serialize
-        serialize(model, serialized_dir)
-
-    cache = ExLlamaV2Cache_8bit(model, batch_size=4)
-    return model, tokenizer, cache
+def tensor_hash(t):
+    mv = t.cpu().numpy().data
+    h = hashlib.sha256()
+    h.update(str(t.dtype).encode("ascii"))
+    h.update(b"\0")
+    h.update(str(tuple(t.size())).encode("ascii"))
+    h.update(b"\0")
+    h.update(mv)
+    return h.digest()
 
 
 def get_tensors(module):
@@ -73,114 +63,146 @@ def extract_tensors(model):
         yield from get_tensors(module)
 
 
-import hashlib
+def hash_dict_checker() -> callable:
+    hash_dicts: list[dict] = []
+
+    def wrapper(h_dict: dict) -> bool:
+        nonlocal hash_dicts
+        hash_dicts.append(h_dict)
+        return all([h_dict == hd for hd in hash_dicts])
+
+    return wrapper
 
 
-def tensor_hash(t):
-    mv = t.cpu().numpy().data
-    h = hashlib.sha256()
-    h.update(str(t.dtype).encode("ascii"))
-    h.update(b"\0")
-    h.update(str(tuple(t.size())).encode("ascii"))
-    h.update(b"\0")
-    h.update(mv)
-    return h.digest()
+@pytest.fixture(scope="session")
+def setup_and_teardown_hash_dict_checker():
+    checker = hash_dict_checker()
+    yield checker
+    # Delete the saved tensors after a test session
+    shutil.rmtree(_serialized_dir)
 
 
-# The next two tests are to save tensors for comparison
-# in `test_tensorizer_loaded_is_same_model`, and are meant to be
-# ran, rather ungracefully, in separate processes,
-# for memory management reasons
-def test_get_hashed_tensors_from_normal_model():
-    model, tokenizer, cache = load_model(model_dir=model_dir, serialize=True)
+@pytest.fixture()
+def save_base_model():
+    import os
+    from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    marker = "normal"
+    model_artifacts_are_cached: bool = (os.path.isdir(local_dir)
+                                        and len(os.listdir(local_dir)) > 0)
 
-    state_dict = dict(extract_tensors(model))
+    # TODO: This is a bit ugly. This can be better
+    if not model_artifacts_are_cached:
+        model_name = "meta-llama/Llama-2-7b-chat-hf"
+        token = os.environ.get("HF_TOKEN")
 
-    hash_dict = {k: base64.b64encode(tensor_hash(v)) for k, v in
-                 state_dict.items()}
+        # Ensure the save directory exists
+        if not os.path.exists(local_dir):
+            os.makedirs(local_dir)
+            print(f"Created directory: {local_dir}")
 
-    with open(f'{model_dir}/hash_dict_{marker}.json', "w") as file:
-        json.dump({k: v.decode("ascii") for k, v in hash_dict.items()}, file)
+        # Load the model and tokenizer
+        print("Downloading model and tokenizer...")
+        model = AutoModelForCausalLM.from_pretrained(model_name, token=token)
+        tokenizer = AutoTokenizer.from_pretrained(model_name, token=token)
 
-    ## Lazy assertion here but mostly just to save the tensors
-    assert hash_dict
+        # Save the tokenizer and model
+        print(f"Saving model and tokenizer to {local_dir}...")
+        tokenizer.save_pretrained(local_dir)
+        model.save_pretrained(local_dir)
+        print("Model and tokenizer saved successfully.")
 
-
-def test_get_hashed_tensors_from_deserialized_model():
-    model, tokenizer, cache = load_model(model_dir=serialized_dir,
-                                         use_tensorizer=True)
-
-    marker = "tensorized"
-
-    state_dict = dict(extract_tensors(model))
-
-    hash_dict = {k: base64.b64encode(tensor_hash(v)) for k, v in
-                 state_dict.items()}
-
-    with open(f'{serialized_dir}/hash_dict_{marker}.json', "w") as file:
-        json.dump({k: v.decode("ascii") for k, v in hash_dict.items()}, file)
-
-    ## Lazy assertion here but mostly just to save the tensors
-    assert hash_dict
+    yield local_dir
 
 
-def test_tensorizer_loaded_is_same_model():
-    hash_dict_a = json.load(open(f'{model_dir}/hash_dict_normal.json'))
-    hash_dict_b = json.load(open(f'{serialized_dir}/hash_dict_tensorized.json'))
+@pytest.fixture(autouse=True)
+def cleanup():
+    yield
+    gc.collect()
+    torch.cuda.empty_cache()
 
-    assert hash_dict_a == hash_dict_b
 
-# TODO: Add test for asserting deserialized config sameness with original config
-def test_serializing_s3():
-    s3_path = os.environ["S3_URI"] if "S3_URI" in os.environ else None
-    s3_access_key_id = os.environ["S3_ACCESS_KEY_ID"] if "S3_ACCESS_KEY_ID" in os.environ else None
-    s3_secret_access_key = os.environ["S3_SECRET_ACCESS_KEY"] if "S3_SECRET_ACCESS_KEY" in os.environ else None
-    s3_endpoint = os.environ["S3_ENDPOINT_URL"] if "S3_ENDPOINT_URL" in os.environ else None
+@pytest.fixture()
+def serialize_model(save_base_model, request, cleanup):
+    use_s3 = request.param
 
-    from util.tensorizer_utils import serialize
-
+    model_dir = local_dir
     config = ExLlamaV2Config()
     config.model_dir = model_dir
+    s3_creds = None
+
+    path = _serialized_dir
+
     config.write_state_dict = True
+
+    if use_s3:
+        s3_access_key_id = os.environ[
+            "S3_ACCESS_KEY_ID"] if "S3_ACCESS_KEY_ID" in os.environ else None
+        s3_secret_access_key = os.environ[
+            "S3_SECRET_ACCESS_KEY"] if "S3_SECRET_ACCESS_KEY" in os.environ else None
+        s3_endpoint = os.environ[
+            "S3_ENDPOINT_URL"] if "S3_ENDPOINT_URL" in os.environ else None
+        s3_uri = os.environ[
+            "S3_URI"] if "S3_URI" in os.environ else None
+
+        s3_creds = {
+            "s3_access_key_id": s3_access_key_id,
+            "s3_secret_access_key": s3_secret_access_key,
+            "s3_endpoint": s3_endpoint
+        }
+
+        if not s3_uri:
+            pytest.skip("No s3_uri provided so skipping..")
+
+        path = s3_uri
 
     config.prepare()
 
     model = ExLlamaV2(config)
     model.load()
 
-    s3_creds = {
-        "s3_access_key_id": s3_access_key_id,
-        "s3_secret_access_key": s3_secret_access_key,
-        "s3_endpoint": s3_endpoint
-    }
+    assert path is not None
 
     serialize(model,
-              s3_path,
+              path,
               s3_creds=s3_creds
               )
 
-def test_deserialize_s3():
-    s3_path = os.environ["S3_URI"] if "S3_URI" in os.environ else None
-    s3_access_key_id = os.environ["S3_ACCESS_KEY_ID"] if "S3_ACCESS_KEY_ID" in os.environ else None
-    s3_secret_access_key = os.environ["S3_SECRET_ACCESS_KEY"] if "S3_SECRET_ACCESS_KEY" in os.environ else None
-    s3_endpoint = os.environ["S3_ENDPOINT_URL"] if "S3_ENDPOINT_URL" in os.environ else None
+    yield
 
-    from util.tensorizer_utils import deserialize_with_tensorizer
 
-    model = deserialize_with_tensorizer(s3_path,
-                                         s3_access_key_id=s3_access_key_id,
-                                         s3_secret_access_key=s3_secret_access_key,
-                                         s3_endpoint=s3_endpoint
-                                         )
-
-    assert model
-
-def test_invalid_tensorizer_config():
+@pytest.fixture()
+def load_model(save_base_model, request):
+    saved_dir = save_base_model
     config = ExLlamaV2Config()
-    config.load_with_tensorizer = True
-    config.write_state_dict = True
-    config.model_dir = "model_dir"
-    with pytest.raises(ValueError):
-        config.prepare()
+    config.model_dir = saved_dir
+    config.load_with_tensorizer = request.param
+    if config.load_with_tensorizer:
+        # TODO: If these two have to be the same, that's dumb
+        config.model_dir = _serialized_dir
+
+    config.prepare()
+
+    model = ExLlamaV2(config)
+
+    model.load()
+
+    tokenizer = ExLlamaV2Tokenizer(config)
+    cache = ExLlamaV2Cache_8bit(model, batch_size=4)
+    yield model, tokenizer, cache
+
+
+# If S3 creds aren't set up, this should skip the last parametrization
+@pytest.mark.parametrize("serialize_model, load_model",
+                         [(False, False), (False, True), (True, True)],
+                         indirect=True)
+def test_deserialize_model(setup_and_teardown_hash_dict_checker,
+                           tmpdir, serialize_model, load_model):
+    checker = setup_and_teardown_hash_dict_checker
+    model, tokenizer, cache = load_model
+    state_dict = dict(extract_tensors(model))
+
+    hash_dict = {k: base64.b64encode(tensor_hash(v)) for k, v in
+                 state_dict.items()}
+
+    assert hash_dict
+    assert checker(hash_dict)
