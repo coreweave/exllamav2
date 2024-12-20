@@ -6,6 +6,7 @@ from typing import ContextManager
 
 from exllamav2 import ExLlamaV2, ExLlamaV2Config, ExLlamaV2Tokenizer, \
     ExLlamaV2Cache_8bit
+from exllamav2.module import ExLlamaV2Module
 from exllamav2.generator import ExLlamaV2BaseGenerator, ExLlamaV2Sampler
 
 read_stream, write_stream = (
@@ -15,6 +16,101 @@ read_stream, write_stream = (
     )
     for mode in ("rb", "wb+")
 )
+
+
+# TODO: Now I need some way to inject these in.
+#  One way could be to monkey patch calls to these base classes
+#  with calls to my subclasses in some context manager
+#  another could be to work out what functions are used to instantiate
+#  all of these and try to use some decorator on those. Looks like
+#  config.prepare() and ExLlamaV2's class constructor are the main
+#  entrypoints, as well as model.load()
+class TensorizerModelExtension(ExLlamaV2):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _get_stats(self, gpu_split):
+        return self.set_device_map(gpu_split or [99999], embed_cpu=False)
+
+class TensorizerConfigExtension(ExLlamaV2Config):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def load_state_dict(self):
+        from tensorizer import TensorDeserializer
+        from util.tensorizer_utils import read_stream
+        with read_stream(
+                os.path.join(self.model_dir, "model.tensors"),
+                **self.tensorizer_args) as stream:
+            self.state_dict = TensorDeserializer(stream)
+    def _load_config(self):
+        from util.tensorizer_utils import read_stream
+        with read_stream(
+                os.path.join(self.model_dir, "config.json"),
+                **self.tensorizer_args) as stream:
+            read_config = json.loads(stream.read().decode("utf-8"))
+
+    def _load_tensor_file_map(self):
+        # TODO: Add _load_tensor_file_map method and override with tensorizer subclass
+        from tensorizer import TensorDeserializer
+        from util.tensorizer_utils import read_stream
+
+        model_loc = self.model_dir or os.environ["TENSORIZER_LOC"]
+        with read_stream(
+                os.path.join(model_loc, "model.tensors"),
+                **self.tensorizer_args) as stream:
+            self.tensor_file_map = dict.fromkeys(
+                TensorDeserializer(stream, lazy_load=True))
+
+class TensorizerModuleExtension(ExLlamaV2Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def load_multi(self,
+                   key: str,
+                   keys: list[str],
+                   measure: bool = False,
+                   cpu: bool = False) -> int | dict[str: 'torch.Tensor']:
+
+        tensors = {}
+        size = 0
+
+        if self.model.config.load_with_tensorizer:
+            for k in keys:
+                ck = key + "." + k
+                if measure:
+                    if ck in self.model.state_dict:
+                        ## TODO: Verify that this is a valid stand-in for
+                        ##       stfile.measure()
+                        size += int(self.model.state_dict[ck].nbytes)
+                elif ck in self.model.state_dict.keys():
+                    tensors[k] = self.model.state_dict[ck]
+            return size if measure else tensors
+
+class TensorizerTokenizerExtension(ExLlamaV2Tokenizer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _load_tokenizer_artifacts(self):
+        # For tensorizer, write the tokenizer files to the model directory
+        # for simplicity
+        import tempfile
+        temp_dir = tempfile.TemporaryDirectory()
+
+        ## TODO: This is hideous. Clean this up once it works
+        from util.tensorizer_utils import io_handler, read_stream
+        if self.config.load_with_tensorizer:
+            with read_stream(
+                os.path.join(self.config.model_dir, "tokenizer.json"),
+                **self.config.tensorizer_args
+            ) as stream:
+                    with open(os.path.join(temp_dir.name, "tokenizer.json"), "wb") as f:
+                        f.write(stream.read())
+            self.config.model_dir = temp_dir.name
+        with io_handler(config.load_with_tensorizer):
+            path_spm = os.path.join(self.config.model_dir, "tokenizer.model")
+            path_hf = os.path.join(self.config.model_dir, "tokenizer.json")
+
 
 def validate_tensorizer_args(config: ExLlamaV2Config) -> None:
     if config.load_with_tensorizer and config.write_state_dict:

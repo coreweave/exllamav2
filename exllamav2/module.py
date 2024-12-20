@@ -25,6 +25,12 @@ class ExLlamaV2Module:
     submodules: list[ExLlamaV2Module]
     assumed_footprint: int
 
+    def __new__(cls, *args, **kwargs):
+        assert isinstance(args[0], ExLlamaV2Config)
+        if args[0].load_with_tensorizer:
+            from util.tensorizer_utils import TensorizerModuleExtension
+            return TensorizerModuleExtension(*args, **kwargs)
+
     def __init__(
         self,
         model: ExLlamaV2,
@@ -76,17 +82,6 @@ class ExLlamaV2Module:
         size = 0
 
         # key = self.key if override_key is None else override_key
-        if self.model.config.load_with_tensorizer:
-            for k in keys:
-                ck = key + "." + k
-                if measure:
-                    if ck in self.model.state_dict:
-                        ## TODO: Verify that this is a valid stand-in for
-                        ##       stfile.measure()
-                        size += int(self.model.state_dict[ck].nbytes)
-                elif ck in self.model.state_dict.keys():
-                    tensors[k] = self.model.state_dict[ck]
-            return size if measure else tensors
 
         for k in keys:
             ck = key + "." + k

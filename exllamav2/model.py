@@ -68,13 +68,18 @@ class ExLlamaV2:
     modules: list[ExLlamaV2Module]
     modules_dict: dict[str: ExLlamaV2Module]
     device_context: list[ExLlamaV2DeviceContext | None]
-    state_dict: dict[str: torch.nn.Parameter]
     cache_map: dict[int: str]
     last_kv_layer_idx: int
     head_layer_idx: int
     loaded: bool
 
     tp_context: TPContext | None
+
+    def __new__(cls, *args, **kwargs):
+        assert isinstance(args[1], ExLlamaV2Config)
+        if args[1].load_with_tensorizer:
+            from util.tensorizer_utils import TensorizerModelExtension
+            return TensorizerModelExtension(*args, **kwargs)
 
     def __init__(
         self,
@@ -87,7 +92,6 @@ class ExLlamaV2:
         self.modules = []
         self.modules_dict = {}
         self.device_context = []
-        self.state_dict = {}
         self.cache_map = {}
         self.loaded = False
         self.tp_context = None
@@ -129,15 +133,6 @@ class ExLlamaV2:
             norm = ExLlamaV2RMSNorm(self, cfg.arch.lm_prefix + "model.norm")
         else:
             raise ValueError("unknown norm type")
-
-        if self.config.load_with_tensorizer:
-            from tensorizer import TensorDeserializer
-            from util.tensorizer_utils import read_stream
-            with read_stream(
-                    os.path.join(self.config.model_dir, "model.tensors"),
-                    **self.config.tensorizer_args) as stream:
-                self.state_dict = TensorDeserializer(stream)
-
         self.modules += [norm]
 
         self.head_layer_idx = len(self.modules)
@@ -330,10 +325,7 @@ class ExLlamaV2:
         with torch.inference_mode():
             set_device_streams()
 
-            if self.config.load_with_tensorizer:
-                stats_ = self.set_device_map(gpu_split or [99999], embed_cpu = False)
-            else:
-                stats_ = self.set_device_map(gpu_split or [99999])
+            stats_ = self._get_stats(gpu_split)
 
             # Load module weights
 
@@ -1058,3 +1050,6 @@ class ExLlamaV2:
             r["logits"] = x
 
         return r
+
+    def _get_stats(self, gpu_split):
+        return self.set_device_map(gpu_split or [99999])

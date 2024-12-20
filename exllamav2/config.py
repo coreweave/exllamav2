@@ -161,6 +161,11 @@ class ExLlamaV2Config:
     fasttensors: bool                           # Fasttensors loader removed in v0.2.3
 
 
+    def __new__(cls, *args, **kwargs):
+        if kwargs.get("load_with_tensorizer"):
+            from util.tensorizer_utils import TensorizerConfigExtension
+            return TensorizerConfigExtension(*args, **kwargs)
+
     def __init__(self,
                  model_dir: str | None = None):
         """
@@ -222,28 +227,15 @@ class ExLlamaV2Config:
 
         assert self.model_dir is not None, "No model_dir specified in ExLlamaV2Config"
 
-
+        # TODO: Add this in the __init__ of the tensorizer subclass
         if self.load_with_tensorizer or self.write_state_dict:
             from util.tensorizer_utils import validate_tensorizer_args
             validate_tensorizer_args(self)
 
-        if not self.load_with_tensorizer:
-            assert os.path.exists(self.model_dir), "Can't find " + self.model_dir
+        assert os.path.exists(self.model_dir), "Can't find " + self.model_dir
 
-            # Load config.json
-
-            self.model_config = os.path.join(self.model_dir, "config.json")
-            assert os.path.exists(self.model_config), "Can't find " + self.model_config
-
-            with open(self.model_config, encoding = "utf8") as f:
-                read_config = json.load(f)
-        else:
-            from util.tensorizer_utils import read_stream
-            with read_stream(
-                    os.path.join(self.model_dir, "config.json"),
-                    **self.tensorizer_args) as stream:
-                read_config = json.loads(stream.read().decode("utf-8"))
-
+        # Load config.json
+        read_config = self._load_config()
 
         # Load generation_config.json
 
@@ -426,26 +418,7 @@ class ExLlamaV2Config:
         st_pattern = os.path.join(self.model_dir, "*.safetensors")
         self.tensor_files = glob.glob(st_pattern)
 
-        if self.load_with_tensorizer:
-            from tensorizer import TensorDeserializer
-            from util.tensorizer_utils import read_stream
-
-            model_loc = self.model_dir or os.environ["TENSORIZER_LOC"]
-            with read_stream(
-                    os.path.join(model_loc, "model.tensors"),
-                    **self.tensorizer_args) as stream:
-
-                self.tensor_file_map = dict.fromkeys(TensorDeserializer(stream, lazy_load=True))
-
-        if len(self.tensor_files) == 0 and not self.load_with_tensorizer:
-            raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
-
-        if not self.load_with_tensorizer:
-            for st_file in self.tensor_files:
-                f = STFile.open(st_file, keymap = self.arch.keymap)
-                for key in f.get_dict():
-                    self.tensor_file_map[key] = st_file
-
+        self._load_tensor_file_map()
 
         # For loading checkpoints with fused MLP layers
 
@@ -636,3 +609,21 @@ class ExLlamaV2Config:
         if not quiet:
             for w in warnings:
                 print(w)
+
+
+    def _load_config(self):
+        self.model_config = os.path.join(self.model_dir, "config.json")
+        assert os.path.exists(self.model_config), "Can't find " + self.model_config
+
+        with open(self.model_config, encoding = "utf8") as f:
+            read_config = json.load(f)
+        return read_config
+
+    def _load_tensor_file_map(self):
+        if len(self.tensor_files) == 0:
+            raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
+
+        for st_file in self.tensor_files:
+            f = STFile.open(st_file, keymap=self.arch.keymap)
+            for key in f.get_dict():
+                self.tensor_file_map[key] = st_file
