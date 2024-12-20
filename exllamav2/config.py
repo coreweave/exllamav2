@@ -10,6 +10,72 @@ from typing import Any, Dict, List, TypeVar, Union, cast
 T = TypeVar('T')
 no_default = object()
 
+
+def tensorizer_context(func: callable):
+    config: ExLlamaV2Config = None
+
+    def get_config(*args) -> ExLlamaV2Config|None:
+        nonlocal config
+        _running_test: bool = os.getenv("TEST_TENSORIZER") == '1'
+        if _running_test or not config:
+            for arg in args:
+                if isinstance(arg, ExLlamaV2Config):
+                    config = arg
+                    break
+                elif hasattr(arg, "model"):
+                    config = arg.model.config
+                    break
+                elif hasattr(arg, "config"):
+                    config = arg.config
+                    break
+                else:
+                    continue
+            if config:
+                from util.tensorizer_utils import validate_tensorizer_args
+                config._state_dict = {}
+                validate_tensorizer_args(config)
+                return config
+
+            return None
+        else:
+            return config
+
+
+    def wrapper(*args, **kwargs):
+        config = get_config(*args)
+        if not config or not config.load_with_tensorizer:
+            return func(*args, **kwargs)
+        if func.__name__ == 'get_tensor_file_map':
+            from tensorizer import TensorDeserializer
+            from util.tensorizer_utils import read_stream
+
+            model_loc = config.model_dir or os.environ["TENSORIZER_LOC"]
+            with read_stream(
+                    os.path.join(model_loc, "model.tensors"),
+                    **config.tensorizer_args) as stream:
+                config.tensor_file_map = dict.fromkeys(
+                    TensorDeserializer(stream, lazy_load=True))
+        elif func.__qualname__ == "ExLlamaV2Tokenizer.__init__":
+            from util.tensorizer_utils import io_handler
+            with io_handler(config.load_with_tensorizer):
+                return func(*args, **kwargs)
+        elif func.__qualname__ == "ExLlamaV2.__init__":
+            from tensorizer import TensorDeserializer
+            from util.tensorizer_utils import read_stream
+            with read_stream(
+                    os.path.join(config.model_dir, "model.tensors"),
+                    **config.tensorizer_args) as stream:
+                config._state_dict = TensorDeserializer(stream)
+            return func(*args, **kwargs)
+        elif func.__qualname__ == "ExLlamaV2Module.load_multi":
+            from util.tensorizer_utils import tensorizer_load_multi
+            assert hasattr(config, "_state_dict")
+            return tensorizer_load_multi(*args)
+        else:
+            return func(*args, **kwargs)
+
+    return wrapper
+
 def read(
     input_dict: dict[str, Any],
     expected_type: type | list[type],
@@ -221,29 +287,15 @@ class ExLlamaV2Config:
     def prepare(self, no_tensors: bool = False):
 
         assert self.model_dir is not None, "No model_dir specified in ExLlamaV2Config"
+        assert os.path.exists(self.model_dir), "Can't find " + self.model_dir
 
+        # Load config.json
 
-        if self.load_with_tensorizer or self.write_state_dict:
-            from util.tensorizer_utils import validate_tensorizer_args
-            validate_tensorizer_args(self)
+        self.model_config = os.path.join(self.model_dir, "config.json")
+        assert os.path.exists(self.model_config), "Can't find " + self.model_config
 
-        if not self.load_with_tensorizer:
-            assert os.path.exists(self.model_dir), "Can't find " + self.model_dir
-
-            # Load config.json
-
-            self.model_config = os.path.join(self.model_dir, "config.json")
-            assert os.path.exists(self.model_config), "Can't find " + self.model_config
-
-            with open(self.model_config, encoding = "utf8") as f:
-                read_config = json.load(f)
-        else:
-            from util.tensorizer_utils import read_stream
-            with read_stream(
-                    os.path.join(self.model_dir, "config.json"),
-                    **self.tensorizer_args) as stream:
-                read_config = json.loads(stream.read().decode("utf-8"))
-
+        with open(self.model_config, encoding = "utf8") as f:
+            read_config = json.load(f)
 
         # Load generation_config.json
 
@@ -423,28 +475,14 @@ class ExLlamaV2Config:
 
         self.tensor_file_map = {}
 
+
         st_pattern = os.path.join(self.model_dir, "*.safetensors")
         self.tensor_files = glob.glob(st_pattern)
-
-        if self.load_with_tensorizer:
-            from tensorizer import TensorDeserializer
-            from util.tensorizer_utils import read_stream
-
-            model_loc = self.model_dir or os.environ["TENSORIZER_LOC"]
-            with read_stream(
-                    os.path.join(model_loc, "model.tensors"),
-                    **self.tensorizer_args) as stream:
-
-                self.tensor_file_map = dict.fromkeys(TensorDeserializer(stream, lazy_load=True))
 
         if len(self.tensor_files) == 0 and not self.load_with_tensorizer:
             raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
 
-        if not self.load_with_tensorizer:
-            for st_file in self.tensor_files:
-                f = STFile.open(st_file, keymap = self.arch.keymap)
-                for key in f.get_dict():
-                    self.tensor_file_map[key] = st_file
+        self.get_tensor_file_map()
 
 
         # For loading checkpoints with fused MLP layers
@@ -588,6 +626,12 @@ class ExLlamaV2Config:
         cleanup_stfiles()
 
 
+    @tensorizer_context
+    def get_tensor_file_map(self):
+        for st_file in self.tensor_files:
+            f = STFile.open(st_file, keymap = self.arch.keymap)
+            for key in f.get_dict():
+                self.tensor_file_map[key] = st_file
     def arch_compat_overrides(self, quiet: bool = False, warn_only = False):
 
         from exllamav2.attn import (

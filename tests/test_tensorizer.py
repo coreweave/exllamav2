@@ -25,7 +25,6 @@ import hashlib
 import logging
 import os
 import shutil
-from util.tensorizer_utils import serialize
 
 logging.basicConfig(level=logging.INFO)
 mylogger = logging.getLogger()
@@ -101,8 +100,10 @@ def hash_dict_checker() -> callable:
 def setup_and_teardown_deserializer_test():
     # Initialize the hash dict checker
     checker = hash_dict_checker()
+    os.environ["TEST_TENSORIZER"] = '1'
     yield checker
 
+    del os.environ["TEST_TENSORIZER"]
     # Delete the saved tensors after a test session
     shutil.rmtree(_serialized_dir)
 
@@ -148,6 +149,8 @@ def cleanup():
 
 @pytest.fixture()
 def serialize_model(save_base_model, request, cleanup):
+    from util.tensorizer_utils import serialize
+
     use_s3 = request.param
 
     model_dir = local_dir
@@ -203,6 +206,7 @@ def load_model(save_base_model, request):
     config.load_with_tensorizer = request.param
     if config.load_with_tensorizer:
         # TODO: If these two have to be the same, that's dumb
+        print("Loading with tensorizer")
         config.model_dir = _serialized_dir
 
     config.prepare()
@@ -218,7 +222,7 @@ def load_model(save_base_model, request):
 
 # If S3 creds aren't set up, this should skip the last parametrization
 @pytest.mark.parametrize("serialize_model, load_model",
-                         [(False, False), (False, True), (True, True)],
+                         [(False, True), (False, False), (False, True), (True, True)],
                          indirect=True)
 def test_deserialize_model(setup_and_teardown_deserializer_test,
                            tmpdir, serialize_model, load_model):
@@ -231,3 +235,5 @@ def test_deserialize_model(setup_and_teardown_deserializer_test,
 
     assert hash_dict
     assert checker(hash_dict)
+
+

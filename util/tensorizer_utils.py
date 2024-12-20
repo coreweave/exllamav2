@@ -25,6 +25,22 @@ def validate_tensorizer_args(config: ExLlamaV2Config) -> None:
                          "only be used for deserialization. ")
 
 
+def tensorizer_load_multi(*args):
+    tensors = {}
+    size = 0
+    self, key, keys, measure, cpu = args
+    for k in keys:
+        ck = key + "." + k
+        if measure:
+            if ck in self.model.config._state_dict:
+                ## TODO: Verify that this is a valid stand-in for
+                ##       stfile.measure()
+                size += int(self.model.config._state_dict[ck].nbytes)
+        elif ck in self.model.config._state_dict.keys():
+            tensors[k] = self.model.config._state_dict[ck]
+    return size if measure else tensors
+
+
 def serialize(model, serialized_dir, s3_creds=None):
 
     if not s3_creds:
@@ -49,7 +65,7 @@ def serialize(model, serialized_dir, s3_creds=None):
     model_uri = os.path.join(serialized_dir, "model.tensors")
     with write_stream(model_uri, **s3_creds) as stream:
         serializer = TensorSerializer(stream)
-        serializer.write_state_dict(model.state_dict)
+        serializer.write_state_dict(model.config._state_dict)
         serializer.close()
 
     config_path = os.path.join(serialized_dir, "config.json")
