@@ -76,6 +76,12 @@ class ExLlamaV2Tokenizer:
 
     tokenizer_config_dict: dict | None
 
+    def __new__(cls, *args, **kwargs):
+        assert isinstance(args[1], ExLlamaV2Config)
+        if args[1].load_with_tensorizer:
+            from util.tensorizer_utils import TensorizerTokenizerExtension
+            return TensorizerTokenizerExtension(*args, **kwargs)
+
     def __init__(
         self,
         config,
@@ -123,8 +129,7 @@ class ExLlamaV2Tokenizer:
 
         # Detect tokenizer model type and initialize
 
-        path_spm = os.path.join(self.config.model_dir, "tokenizer.model")
-        path_hf = os.path.join(self.config.model_dir, "tokenizer.json")
+        path_spm, path_hf = self._load_tokenizer_artifacts()
 
         if os.path.exists(path_hf) and not force_spm:
             self.tokenizer_model = ExLlamaV2TokenizerHF(path_hf)
@@ -815,3 +820,8 @@ class ExLlamaV2Tokenizer:
         new_enc = self.encode(text)
         self.tokenized_str_cache[text] = new_enc
         return new_enc
+
+    def _load_tokenizer_artifacts(self):
+        path_spm = os.path.join(self.config.model_dir, "tokenizer.model")
+        path_hf = os.path.join(self.config.model_dir, "tokenizer.json")
+        return path_spm, path_hf

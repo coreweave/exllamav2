@@ -84,6 +84,11 @@ class ExLlamaV2Config:
     tensor_file_map: dict
     tensor_files: list
 
+    # Tensorizer args
+    write_state_dict: bool                      # Whether to construct a state_dict, necessary for serializing with `tensorizer`
+    load_with_tensorizer: bool                  # Deserialize tensors with `tensorizer`. Model tensors are expected to be found in model_dir/model.tensors or 'TENSORIZER_LOC'
+    # TODO: May want to raise a NameError/ValueError/warning if no model.tensors file can be found in model_dir/*
+
     tokenizer_path: str
 
     bos_token_id: int
@@ -156,6 +161,11 @@ class ExLlamaV2Config:
     fasttensors: bool                           # Fasttensors loader removed in v0.2.3
 
 
+    def __new__(cls, *args, **kwargs):
+        if kwargs.get("load_with_tensorizer"):
+            from util.tensorizer_utils import TensorizerConfigExtension
+            return TensorizerConfigExtension(*args, **kwargs)
+
     def __init__(self,
                  model_dir: str | None = None):
         """
@@ -176,6 +186,20 @@ class ExLlamaV2Config:
         self.no_flash_attn = 'EXLLAMA_NO_FLASH_ATTN' in os.environ
         self.no_xformers = 'EXLLAMA_NO_XFORMERS' in os.environ
         self.no_sdpa = 'EXLLAMA_NO_SDPA' in os.environ
+        self.fasttensors = 'EXLLAMA_FASTTENSORS' in os.environ
+
+        # TODO: Make this exposed in a better way, as it forces config.write_state_dict = True
+        self.write_state_dict = False
+
+        ## TODO: Think of a nicer way than this
+        self.load_with_tensorizer = 'TENSORIZER' in os.environ
+        self.tensorizer_args = {
+            "s3_access_key_id": os.environ.get("S3_ACCESS_KEY_ID"),
+            "s3_secret_access_key": os.environ.get("S3_SECRET_ACCESS_KEY"),
+            "s3_endpoint": os.environ.get("S3_ENDPOINT_URL"),
+        }
+
+
         self.load_in_q4 = False
         self.no_graphs = 'EXLLAMA_NO_GRAPHS' in os.environ
 
@@ -202,15 +226,16 @@ class ExLlamaV2Config:
     def prepare(self, no_tensors: bool = False):
 
         assert self.model_dir is not None, "No model_dir specified in ExLlamaV2Config"
+
+        # TODO: Add this in the __init__ of the tensorizer subclass
+        if self.load_with_tensorizer or self.write_state_dict:
+            from util.tensorizer_utils import validate_tensorizer_args
+            validate_tensorizer_args(self)
+
         assert os.path.exists(self.model_dir), "Can't find " + self.model_dir
 
         # Load config.json
-
-        self.model_config = os.path.join(self.model_dir, "config.json")
-        assert os.path.exists(self.model_config), "Can't find " + self.model_config
-
-        with open(self.model_config, encoding = "utf8") as f:
-            read_config = json.load(f)
+        read_config = self._load_config()
 
         # Load generation_config.json
 
@@ -393,13 +418,7 @@ class ExLlamaV2Config:
         st_pattern = os.path.join(self.model_dir, "*.safetensors")
         self.tensor_files = glob.glob(st_pattern)
 
-        if len(self.tensor_files) == 0:
-            raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
-
-        for st_file in self.tensor_files:
-            f = STFile.open(st_file, keymap = self.arch.keymap)
-            for key in f.get_dict():
-                self.tensor_file_map[key] = st_file
+        self._load_tensor_file_map()
 
         # For loading checkpoints with fused MLP layers
 
@@ -590,3 +609,21 @@ class ExLlamaV2Config:
         if not quiet:
             for w in warnings:
                 print(w)
+
+
+    def _load_config(self):
+        self.model_config = os.path.join(self.model_dir, "config.json")
+        assert os.path.exists(self.model_config), "Can't find " + self.model_config
+
+        with open(self.model_config, encoding = "utf8") as f:
+            read_config = json.load(f)
+        return read_config
+
+    def _load_tensor_file_map(self):
+        if len(self.tensor_files) == 0:
+            raise ValueError(f" ## No .safetensors files found in {self.model_dir}")
+
+        for st_file in self.tensor_files:
+            f = STFile.open(st_file, keymap=self.arch.keymap)
+            for key in f.get_dict():
+                self.tensor_file_map[key] = st_file

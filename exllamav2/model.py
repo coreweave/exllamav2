@@ -75,6 +75,12 @@ class ExLlamaV2:
 
     tp_context: TPContext | None
 
+    def __new__(cls, *args, **kwargs):
+        assert isinstance(args[1], ExLlamaV2Config)
+        if args[1].load_with_tensorizer:
+            from util.tensorizer_utils import TensorizerModelExtension
+            return TensorizerModelExtension(*args, **kwargs)
+
     def __init__(
         self,
         config: ExLlamaV2Config,
@@ -319,7 +325,7 @@ class ExLlamaV2:
         with torch.inference_mode():
             set_device_streams()
 
-            stats_ = self.set_device_map(gpu_split or [99999])
+            stats_ = self._get_stats(gpu_split)
 
             # Load module weights
 
@@ -1044,3 +1050,6 @@ class ExLlamaV2:
             r["logits"] = x
 
         return r
+
+    def _get_stats(self, gpu_split):
+        return self.set_device_map(gpu_split or [99999])

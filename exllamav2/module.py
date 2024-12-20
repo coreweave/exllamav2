@@ -25,6 +25,12 @@ class ExLlamaV2Module:
     submodules: list[ExLlamaV2Module]
     assumed_footprint: int
 
+    def __new__(cls, *args, **kwargs):
+        assert isinstance(args[0], ExLlamaV2Config)
+        if args[0].load_with_tensorizer:
+            from util.tensorizer_utils import TensorizerModuleExtension
+            return TensorizerModuleExtension(*args, **kwargs)
+
     def __init__(
         self,
         model: ExLlamaV2,
@@ -94,6 +100,8 @@ class ExLlamaV2Module:
                     size += stfile.measure(key + "." + k)
                 else:
                     tensors[k] = stfile.get_tensor(key + "." + k, device = self.device() if not cpu else "cpu")
+                    if self.model.config.write_state_dict:
+                        self.model.state_dict[key + "." + k] = tensors[k].to(device="cpu", copy=True)
 
         return size if measure else tensors
 
