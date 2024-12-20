@@ -68,7 +68,6 @@ class ExLlamaV2:
     modules: list[ExLlamaV2Module]
     modules_dict: dict[str: ExLlamaV2Module]
     device_context: list[ExLlamaV2DeviceContext | None]
-    state_dict: dict[str: torch.nn.Parameter]
     cache_map: dict[int: str]
     last_kv_layer_idx: int
     head_layer_idx: int
@@ -87,7 +86,6 @@ class ExLlamaV2:
         self.modules = []
         self.modules_dict = {}
         self.device_context = []
-        self.state_dict = {}
         self.cache_map = {}
         self.loaded = False
         self.tp_context = None
@@ -129,15 +127,6 @@ class ExLlamaV2:
             norm = ExLlamaV2RMSNorm(self, cfg.arch.lm_prefix + "model.norm")
         else:
             raise ValueError("unknown norm type")
-
-        if self.config.load_with_tensorizer:
-            from tensorizer import TensorDeserializer
-            from util.tensorizer_utils import read_stream
-            with read_stream(
-                    os.path.join(self.config.model_dir, "model.tensors"),
-                    **self.config.tensorizer_args) as stream:
-                self.state_dict = TensorDeserializer(stream)
-
         self.modules += [norm]
 
         self.head_layer_idx = len(self.modules)
